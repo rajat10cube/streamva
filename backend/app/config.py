@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     # --- media ---
     ffmpeg: str = "auto"                 # auto|on|off
     transcode: str = "on-demand"         # off|on-demand|pre-pass
+    remux_cache_mb: int = 10240          # size cap for the .mkv->.mp4 remux cache (LRU)
 
     # --- auth ---
     auth: str = "basic"                  # none|basic (basic = require login)

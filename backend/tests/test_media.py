@@ -130,6 +130,31 @@ def test_scan_generates_hover_previews(tmp_path):
     assert r.status_code == 200 and r.headers["content-type"].startswith("image/")
 
 
+@needs_ffmpeg
+def test_mkv_remux_is_a_seekable_mp4(tmp_path):
+    vid = tmp_path / "lib" / "Clips" / "a.mkv"
+    vid.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["ffmpeg", "-f", "lavfi", "-i", "testsrc=duration=3:size=320x240:rate=10",
+         "-f", "lavfi", "-i", "sine=frequency=440:duration=3",
+         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", "-y", str(vid)],
+        capture_output=True,
+    )
+    c = TestClient(app)
+    c.post("/api/libraries", json={"path": str(tmp_path / "lib")}, auth=ADMIN)
+    c.post("/api/admin/rescan", params={"wait": "true"}, auth=ADMIN)
+
+    card = next(x for x in c.get("/api/courses", auth=ADMIN).json()["courses"] if x["title"] == "Clips")
+    lec = c.get(f"/api/courses/{card['slug']}", auth=ADMIN).json()["sections"][0]["lectures"][0]
+    assert lec["playback"] == "remux"  # .mkv goes through the remux path
+
+    r = c.get(f"/api/lectures/{lec['id']}/remux", auth=ADMIN)
+    assert r.status_code == 200 and r.headers["content-type"].startswith("video/mp4")
+    # cached, so seekable via HTTP range
+    r2 = c.get(f"/api/lectures/{lec['id']}/remux", headers={"Range": "bytes=0-99"}, auth=ADMIN)
+    assert r2.status_code == 206
+
+
 def test_scan_removes_orphan_covers(tmp_path):
     from app.config import get_settings
 
