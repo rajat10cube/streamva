@@ -1,4 +1,4 @@
-"""ffprobe helpers for media duration (best-effort, optional)."""
+"""ffprobe/ffmpeg helpers for media duration + thumbnails (best-effort, optional)."""
 
 from __future__ import annotations
 
@@ -6,13 +6,23 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from .config import get_settings
+
+
+def ffmpeg_bin() -> str:
+    return get_settings().ffmpeg_path or "ffmpeg"
+
+
+def ffprobe_bin() -> str:
+    return get_settings().ffprobe_path or "ffprobe"
+
 
 def ffprobe_available() -> bool:
-    return shutil.which("ffprobe") is not None
+    return shutil.which(ffprobe_bin()) is not None
 
 
 def ffmpeg_available() -> bool:
-    return shutil.which("ffmpeg") is not None
+    return shutil.which(ffmpeg_bin()) is not None
 
 
 def generate_cover(video: Path, out: Path, at: float = 15.0) -> bool:
@@ -20,7 +30,7 @@ def generate_cover(video: Path, out: Path, at: float = 15.0) -> bool:
     out.parent.mkdir(parents=True, exist_ok=True)
     try:
         subprocess.run(
-            ["ffmpeg", "-y", "-ss", str(at), "-i", str(video),
+            [ffmpeg_bin(), "-y", "-ss", str(at), "-i", str(video),
              "-frames:v", "1", "-vf", "scale=640:-2", "-q:v", "4", str(out)],
             capture_output=True, timeout=60,
         )
@@ -52,7 +62,7 @@ def generate_previews(
         out = out_dir / f"{token}_{i}.jpg"
         try:
             subprocess.run(
-                ["ffmpeg", "-y", "-ss", f"{at:.2f}", "-i", str(video),
+                [ffmpeg_bin(), "-y", "-ss", f"{at:.2f}", "-i", str(video),
                  "-frames:v", "1", "-vf", "scale=320:-2", "-q:v", "5", str(out)],
                 capture_output=True, timeout=60,
             )
@@ -66,7 +76,7 @@ def generate_previews(
 def probe_duration(path: Path) -> float | None:
     try:
         out = subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+            [ffprobe_bin(), "-v", "error", "-show_entries", "format=duration",
              "-of", "default=nw=1:nk=1", str(path)],
             capture_output=True, text=True, timeout=30,
         )

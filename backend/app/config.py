@@ -51,6 +51,11 @@ class Settings(BaseSettings):
     remux_cache_mb: int = 10240          # size cap for the .mkv->.mp4 remux cache (LRU)
     hwaccel: str = "none"                # none|vaapi|qsv (Intel Quick Sync via /dev/dri)
     hwaccel_device: str = "/dev/dri/renderD128"
+    # binaries + VA driver dir — point these at jellyfin-ffmpeg for a modern,
+    # HW-accel-ready ffmpeg with bundled Intel drivers (e.g. /usr/lib/jellyfin-ffmpeg).
+    ffmpeg_path: str = "ffmpeg"
+    ffprobe_path: str = "ffprobe"
+    libva_drivers_path: str = ""         # LIBVA_DRIVERS_PATH for hardware transcoding
 
     # --- auth ---
     auth: str = "basic"                  # none|basic (basic = require login)

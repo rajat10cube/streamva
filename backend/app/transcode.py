@@ -29,6 +29,7 @@ from starlette.responses import Response
 
 from .config import get_settings
 from .covers import cover_token
+from .probe import ffmpeg_bin, ffprobe_bin
 
 logger = logging.getLogger("streamva.transcode")
 
@@ -38,7 +39,7 @@ _SW_VIDEO = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt",
 
 
 def ffmpeg_available() -> bool:
-    return shutil.which("ffmpeg") is not None
+    return shutil.which(ffmpeg_bin()) is not None
 
 
 def remux_dir() -> Path:
@@ -52,7 +53,7 @@ def remux_cache_path(lib_path: str, lecture_rel: str) -> Path:
 def _probe(path: Path, stream: str, entries: str) -> list[str]:
     try:
         out = subprocess.run(
-            ["ffprobe", "-v", "error", "-select_streams", stream,
+            [ffprobe_bin(), "-v", "error", "-select_streams", stream,
              "-show_entries", f"stream={entries}", "-of", "default=nw=1:nk=1", str(path)],
             capture_output=True, text=True, timeout=30,
         )
@@ -74,9 +75,13 @@ def _stream_plan(src: Path) -> tuple[bool, bool]:
 
 def _hw_env() -> dict[str, str]:
     """ffmpeg environment for HW: force the Intel iHD VA driver (libva otherwise
-    guesses a non-existent 'xe' driver on Meteor Lake and fails to init)."""
+    guesses a non-existent 'xe' driver on Meteor Lake and fails to init), and
+    point at a bundled driver dir if configured (e.g. jellyfin-ffmpeg's)."""
     env = dict(os.environ)
     env.setdefault("LIBVA_DRIVER_NAME", "iHD")
+    dp = get_settings().libva_drivers_path
+    if dp:
+        env["LIBVA_DRIVERS_PATH"] = dp
     return env
 
 
@@ -100,7 +105,7 @@ def _hwaccel_functional(mode: str, dev: str) -> bool:
     if hw is None:
         return False
     in_flags, vf, venc = hw
-    test = ["ffmpeg", "-hide_banner", "-loglevel", "error", *in_flags,
+    test = [ffmpeg_bin(), "-hide_banner", "-loglevel", "error", *in_flags,
             "-f", "lavfi", "-i", "color=c=black:s=128x128:d=0.2:r=5",
             *vf, *venc, "-f", "null", "-"]
     try:
@@ -136,7 +141,7 @@ def _copy_to_file(src: Path, out: Path) -> bool:
     """Stream-copy into a complete, seekable faststart MP4."""
     out.parent.mkdir(parents=True, exist_ok=True)
     tmp = out.with_suffix(".tmp.mp4")
-    cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(src),
+    cmd = [ffmpeg_bin(), "-hide_banner", "-loglevel", "error", "-y", "-i", str(src),
            "-map", "0:v:0", "-map", "0:a:0?", "-c", "copy",
            "-movflags", "+faststart", str(tmp)]
     try:
@@ -164,7 +169,7 @@ def _transcode_stream(src: Path, video_copy: bool, audio_copy: bool) -> Streamin
         if in_flags:  # hardware encode -> force the iHD VA driver
             env = _hw_env()
     aenc = ["-c:a", "copy"] if audio_copy else ["-c:a", "aac", "-b:a", "192k"]
-    cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", *in_flags, "-i", str(src),
+    cmd = [ffmpeg_bin(), "-hide_banner", "-loglevel", "error", *in_flags, "-i", str(src),
            "-map", "0:v:0", "-map", "0:a:0?", *vf, *venc, *aenc,
            "-movflags", "frag_keyframe+empty_moov+default_base_moof", "-f", "mp4", "pipe:1"]
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=env)
