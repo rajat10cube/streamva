@@ -310,9 +310,15 @@ function LibrariesTab() {
   const { data: bdmvStatus } = useQuery({
     queryKey: ["bdmv-status"],
     queryFn: getBdmvStatus,
-    refetchInterval: (q) => (q.state.data?.running ? 700 : false),
+    // keep polling even when idle so we catch the moment a conversion starts
+    refetchInterval: (q) => (q.state.data?.running ? 700 : 2000),
   });
-  const converting = !!bdmvStatus?.running;
+  const running = !!bdmvStatus?.running;
+  const [starting, setStarting] = useState(false);
+  const converting = starting || running;
+  useEffect(() => {
+    if (running) setStarting(false); // real progress arrived
+  }, [running]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const allTitleIds = useMemo(
     () => (bdmv?.discs ?? []).flatMap((d) => d.titles.map((t) => t.id)),
@@ -340,11 +346,14 @@ function LibrariesTab() {
   }, [bdmvStatus?.running]);
   const startConvert = async () => {
     try {
+      setStarting(true); // show the bar immediately, before the first status poll
       await startBdmvConvert([...selected]);
       setSelected(new Set());
       qc.invalidateQueries({ queryKey: ["bdmv-status"] });
       toast.success("Converting selected title(s)…");
+      setTimeout(() => setStarting(false), 12000); // safety, if it never actually starts
     } catch (e) {
+      setStarting(false);
       toast.error(errMsg(e));
     }
   };
@@ -459,15 +468,19 @@ function LibrariesTab() {
             {converting ? (
               <>
                 <div className="mb-2 flex items-center justify-between gap-2">
-                  <span className="truncate">Converting {bdmvStatus?.current ?? "…"}</span>
-                  <span className="shrink-0 text-muted-foreground">
-                    {bdmvStatus?.done}/{bdmvStatus?.total} · {bdmvStatus?.percent}%
+                  <span className="truncate">
+                    {running ? `Converting ${bdmvStatus?.current ?? "…"}` : "Starting…"}
                   </span>
+                  {running && (
+                    <span className="shrink-0 text-muted-foreground">
+                      {bdmvStatus?.done}/{bdmvStatus?.total} · {bdmvStatus?.percent}%
+                    </span>
+                  )}
                 </div>
                 <div className="h-2 overflow-hidden rounded-full bg-muted">
                   <div
-                    className="h-full bg-primary transition-all"
-                    style={{ width: `${bdmvStatus?.percent ?? 0}%` }}
+                    className={cn("h-full bg-primary transition-all", !running && "animate-pulse")}
+                    style={{ width: running ? `${bdmvStatus?.percent ?? 0}%` : "100%" }}
                   />
                 </div>
               </>
