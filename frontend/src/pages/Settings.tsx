@@ -303,6 +303,7 @@ function LibrariesTab() {
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["libraries"] });
     qc.invalidateQueries({ queryKey: ["courses"] });
+    qc.invalidateQueries({ queryKey: ["bdmv"] });
   };
 
   // Blu-ray (BDMV) folders detected + conversion progress
