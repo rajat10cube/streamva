@@ -77,7 +77,7 @@ describe("Library page", () => {
   it("shows the empty state when there are no courses", async () => {
     getCourses.mockResolvedValue({ courses: [], categories: [] });
     renderLibrary();
-    expect(await screen.findByText("No courses yet")).toBeInTheDocument();
+    expect(await screen.findByText("No videos yet")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /add a library/i })).toBeInTheDocument();
   });
 
@@ -125,7 +125,7 @@ describe("Library page", () => {
     renderLibrary();
     await screen.findByText("Unreal Engine 5");
 
-    await userEvent.click(screen.getByRole("button", { name: /course options/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^options$/i }));
     await userEvent.click(await screen.findByText("Reset progress"));
 
     // confirm dialog gates the destructive action
@@ -144,7 +144,7 @@ describe("Library page", () => {
     renderLibrary();
     await screen.findByText("Blender Basics");
 
-    await userEvent.click(screen.getByRole("button", { name: /course options/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^options$/i }));
     await userEvent.click(await screen.findByText("Mark all complete"));
 
     await waitFor(() => expect(completeCourse).toHaveBeenCalledWith("blender"));

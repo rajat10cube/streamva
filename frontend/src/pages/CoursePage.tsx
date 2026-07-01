@@ -154,7 +154,7 @@ export default function CoursePage() {
       <div className="flex h-screen flex-col overflow-hidden">
         <AppHeader />
         <p className={cn("container py-6", isError ? "text-destructive" : "text-muted-foreground")}>
-          {isError ? "Course not found." : "Loading…"}
+          {isError ? "Not found." : "Loading…"}
         </p>
       </div>
     );
@@ -324,7 +324,7 @@ export default function CoursePage() {
                   <div>
                     <h2 className="text-lg font-medium">{current.title}</h2>
                     <p className="text-sm text-muted-foreground">
-                      Lecture {idx + 1} of {flat.length}
+                      Video {idx + 1} of {flat.length}
                     </p>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
@@ -346,7 +346,7 @@ export default function CoursePage() {
                 />
               </>
             ) : (
-              <p className="text-muted-foreground">Select a lecture to begin.</p>
+              <p className="text-muted-foreground">Select a video to begin.</p>
             )}
           </div>
         </main>

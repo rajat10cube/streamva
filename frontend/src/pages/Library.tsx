@@ -51,7 +51,7 @@ function CourseMenu({ c }: { c: CourseCard }) {
       invalidate();
       toast.success(`Marked “${c.title}” complete`);
     },
-    onError: () => toast.error("Couldn’t update course"),
+    onError: () => toast.error("Couldn’t update video"),
   });
 
   const hasProgress = c.completedCount > 0 || !!c.lastActivity;
@@ -63,7 +63,7 @@ function CourseMenu({ c }: { c: CourseCard }) {
           <Button
             variant="ghost"
             size="icon"
-            aria-label="Course options"
+            aria-label="Options"
             className="size-8 bg-black/50 text-white opacity-0 backdrop-blur transition hover:bg-black/70 hover:text-white focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
             onClick={(e) => e.preventDefault()}
           >
@@ -90,7 +90,7 @@ function CourseMenu({ c }: { c: CourseCard }) {
           <AlertDialogHeader>
             <AlertDialogTitle>Reset progress?</AlertDialogTitle>
             <AlertDialogDescription>
-              This clears your watch position and completion for every lecture in “{c.title}”. It can’t be
+              This clears your watch position and completion for every video in “{c.title}”. It can’t be
               undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -176,7 +176,7 @@ function CourseCardView({ c }: { c: CourseCard }) {
         <div className="p-3">
           <div className="line-clamp-2 font-medium leading-snug">{c.title}</div>
           <div className="mt-1 text-xs text-muted-foreground">
-            {c.completedCount > 0 ? `${c.completedCount}/${c.lectureCount} · ${p}%` : `${c.lectureCount} lectures`}
+            {c.completedCount > 0 ? `${c.completedCount}/${c.lectureCount} · ${p}%` : `${c.lectureCount} videos`}
           </div>
         </div>
       </Link>
@@ -255,7 +255,7 @@ export default function Library() {
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               className="pl-9"
-              placeholder="Search courses & lessons…"
+              placeholder="Search videos…"
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
@@ -271,7 +271,7 @@ export default function Library() {
           <div className="space-y-8">
             {courseHits.length > 0 && (
               <section>
-                <h2 className="mb-3 text-lg font-semibold">Courses</h2>
+                <h2 className="mb-3 text-lg font-semibold">Videos</h2>
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
                   {courseHits.map((r) => {
                     const c = bySlug.get(r.slug);
@@ -281,9 +281,9 @@ export default function Library() {
               </section>
             )}
             <section>
-              <h2 className="mb-3 text-lg font-semibold">Lessons</h2>
+              <h2 className="mb-3 text-lg font-semibold">In collections</h2>
               {lessonHits.length === 0 ? (
-                <p className="text-muted-foreground">No lessons match.</p>
+                <p className="text-muted-foreground">No videos match.</p>
               ) : (
                 <div className="divide-y rounded-lg border">
                   {lessonHits.map((r) => (
@@ -348,7 +348,7 @@ export default function Library() {
                       value={status}
                       onChange={(e) => setStatus(e.target.value)}
                     >
-                      <option value="all">All courses</option>
+                      <option value="all">All videos</option>
                       <option value="inprogress">In progress</option>
                       <option value="completed">Completed</option>
                       <option value="notstarted">Not started</option>
@@ -372,7 +372,7 @@ export default function Library() {
             <div className="min-w-0 space-y-8">
               {continueRow.length > 0 && (
                 <section>
-                  <h2 className="mb-3 text-lg font-semibold">Continue learning</h2>
+                  <h2 className="mb-3 text-lg font-semibold">Continue watching</h2>
                   <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
                     {continueRow.map((c) => <CourseCardView key={c.id} c={c} />)}
                   </div>
@@ -382,16 +382,16 @@ export default function Library() {
               {data && data.courses.length === 0 ? (
                 <div className="grid place-items-center rounded-lg border border-dashed py-16 text-center">
                   <LibraryIcon className="mb-3 size-8 text-muted-foreground" />
-                  <p className="font-medium">No courses yet</p>
+                  <p className="font-medium">No videos yet</p>
                   <p className="mb-4 text-sm text-muted-foreground">
-                    Add a library that points at a folder of your downloaded courses.
+                    Add a library that points at a folder of your videos.
                   </p>
                   <Button asChild>
                     <Link to="/settings">Add a library</Link>
                   </Button>
                 </div>
               ) : view.length === 0 ? (
-                <p className="py-10 text-center text-muted-foreground">No courses match these filters.</p>
+                <p className="py-10 text-center text-muted-foreground">No videos match these filters.</p>
               ) : (
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
                   {view.map((c) => <CourseCardView key={c.id} c={c} />)}

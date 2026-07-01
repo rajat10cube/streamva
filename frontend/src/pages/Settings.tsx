@@ -313,7 +313,7 @@ function LibrariesTab() {
       refresh();
       const errs = (scan.errors ?? []).filter((e) => (libs ?? []).some((l) => l.path === e.library));
       if (errs.length) toast.error(`Scan finished with ${errs.length} issue(s) — see below`);
-      else toast.success(`Scan complete — ${scan.courses} courses, ${scan.lectures} lectures`);
+      else toast.success(`Scan complete — ${scan.courses} items · ${scan.lectures} videos`);
     }
     wasRunning.current = !!scan?.running;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -375,7 +375,7 @@ function LibrariesTab() {
                 {scan.phase === "indexing" ? "Indexing…" : `Scanning ${scan.current ?? "…"}`}
               </span>
               <span className="shrink-0 text-muted-foreground">
-                {scan.librariesDone}/{scan.librariesTotal} libraries · {scan.courses} courses · {scan.lectures} lectures so far
+                {scan.librariesDone}/{scan.librariesTotal} libraries · {scan.courses} items · {scan.lectures} videos so far
               </span>
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-muted">
@@ -388,7 +388,7 @@ function LibrariesTab() {
         ) : (
           scan?.finished != null && (
             <p className="text-sm text-muted-foreground">
-              Last scan: {scan.courses} courses · {scan.lectures} lectures
+              Last scan: {scan.courses} items · {scan.lectures} videos
               {visibleErrors.length > 0 && ` · ${visibleErrors.length} issue(s)`}
             </p>
           )
@@ -410,7 +410,7 @@ function LibrariesTab() {
         <div className="flex flex-wrap items-end gap-3 border-t pt-4">
           <div className="min-w-[240px] flex-1 space-y-1.5">
             <Label>Path (inside the container)</Label>
-            <Input value={path} onChange={(e) => setPath(e.target.value)} placeholder="/media/courses" />
+            <Input value={path} onChange={(e) => setPath(e.target.value)} placeholder="/media/videos" />
           </div>
           <div className="space-y-1.5">
             <Label>Name (optional)</Label>
@@ -458,7 +458,7 @@ function LibraryRow({ lib, onChanged }: { lib: LibraryItem; onChanged: () => voi
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Remove this library?</AlertDialogTitle>
-            <AlertDialogDescription>Its courses and progress will be deleted.</AlertDialogDescription>
+            <AlertDialogDescription>Its videos and progress will be deleted.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
