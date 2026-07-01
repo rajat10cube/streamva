@@ -1,0 +1,26 @@
+services:
+  streamva:
+    build: .
+    image: streamva:latest
+    container_name: streamva
+    ports:
+      - "8800:8000"
+    volumes:
+      # mount your real course libraries read-only (edit paths to match your host)
+      - /mnt/media/udemy-downloads:/libraries/udemy-downloads:ro
+      - /mnt/media/courses:/libraries/courses:ro
+      # library/grouping config
+      - ./streamva.yaml:/config/streamva.yaml:ro
+      # app state (sqlite + thumbnail/transcode cache)
+      - streamva-data:/data
+    environment:
+      STREAMVA_CONFIG: /config/streamva.yaml
+      STREAMVA_DATA_DIR: /data
+      STREAMVA_AUTH: basic
+      STREAMVA_AUTH_USER: admin
+      STREAMVA_AUTH_PASS: change-me
+      STREAMVA_DEV_CORS: "false"
+    restart: unless-stopped
+
+volumes:
+  streamva-data:

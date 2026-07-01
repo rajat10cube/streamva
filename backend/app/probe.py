@@ -1,0 +1,80 @@
+"""ffprobe helpers for media duration (best-effort, optional)."""
+
+from __future__ import annotations
+
+import shutil
+import subprocess
+from pathlib import Path
+
+
+def ffprobe_available() -> bool:
+    return shutil.which("ffprobe") is not None
+
+
+def ffmpeg_available() -> bool:
+    return shutil.which("ffmpeg") is not None
+
+
+def generate_cover(video: Path, out: Path, at: float = 15.0) -> bool:
+    """Extract a single frame ~``at`` seconds into ``video`` as a JPEG cover."""
+    out.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        subprocess.run(
+            ["ffmpeg", "-y", "-ss", str(at), "-i", str(video),
+             "-frames:v", "1", "-vf", "scale=640:-2", "-q:v", "4", str(out)],
+            capture_output=True, timeout=60,
+        )
+    except (subprocess.SubprocessError, OSError):
+        return False
+    return out.exists() and out.stat().st_size > 0
+
+
+def generate_previews(
+    video: Path, out_dir: Path, token: str, count: int, duration: float | None
+) -> int:
+    """Extract ``count`` frames evenly spread across ``video`` for a hover preview.
+
+    Frames are written as ``{token}_{i}.jpg`` (0-indexed). Uses fast input seeking
+    (``-ss`` before ``-i``) so long videos don't get fully decoded. Returns how
+    many frames were produced.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for old in out_dir.glob(f"{token}_*.jpg"):  # clear stale frames for this item
+        try:
+            old.unlink()
+        except OSError:
+            pass
+    dur = duration if (duration and duration > 2) else None
+    made = 0
+    for i in range(count):
+        # spread across the middle ~90% of the video (skip intro/outro edges)
+        at = dur * (0.05 + 0.9 * (i + 0.5) / count) if dur else 5.0 + i * 10.0
+        out = out_dir / f"{token}_{i}.jpg"
+        try:
+            subprocess.run(
+                ["ffmpeg", "-y", "-ss", f"{at:.2f}", "-i", str(video),
+                 "-frames:v", "1", "-vf", "scale=320:-2", "-q:v", "5", str(out)],
+                capture_output=True, timeout=60,
+            )
+        except (subprocess.SubprocessError, OSError):
+            continue
+        if out.exists() and out.stat().st_size > 0:
+            made += 1
+    return made
+
+
+def probe_duration(path: Path) -> float | None:
+    try:
+        out = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=nw=1:nk=1", str(path)],
+            capture_output=True, text=True, timeout=30,
+        )
+    except (subprocess.SubprocessError, OSError):
+        return None
+    value = out.stdout.strip()
+    try:
+        d = float(value)
+        return d if d > 0 else None
+    except ValueError:
+        return None

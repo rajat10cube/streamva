@@ -1,0 +1,3 @@
+# Normalize to LF in the repository for all text files.
+# (Critical for deploy/lxc/*.sh — CRLF would break them on Linux.)
+* text=auto eol=lf

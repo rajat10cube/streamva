@@ -1,0 +1,8 @@
+# Library configuration. Copy to streamva.yaml and edit paths.
+# group_depth: 0 -> each top-level folder is a course
+# group_depth: 1 -> top-level folder is a provider/category; course is one level down
+libraries:
+  - path: /libraries/udemy-downloads
+    group_depth: 0
+  - path: /libraries/courses
+    group_depth: 1
