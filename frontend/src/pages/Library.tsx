@@ -189,6 +189,7 @@ export default function Library() {
   const [q, setQ] = useState("");
   const [cat, setCat] = useState("All");
   const [provider, setProvider] = useState("All");
+  const [library, setLibrary] = useState("All");
   const [status, setStatus] = useState("all");
   const [sort, setSort] = useState("title");
   const query = q.trim();
@@ -207,9 +208,10 @@ export default function Library() {
       (data?.courses ?? []).filter(
         (c) =>
           (cat === "All" || c.category === cat) &&
-          (provider === "All" || c.provider === provider),
+          (provider === "All" || c.provider === provider) &&
+          (library === "All" || c.library === library),
       ),
-    [data, cat, provider],
+    [data, cat, provider, library],
   );
 
   const view = useMemo(() => {
@@ -306,27 +308,53 @@ export default function Library() {
             {data && data.courses.length > 0 && (
               <aside className="mb-6 md:mb-0">
                 <div className="space-y-5 md:sticky md:top-[4.5rem]">
-                  <div>
-                    <div className="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      Topic
+                  {(data.libraries ?? []).length >= 2 && (
+                    <div>
+                      <div className="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        Library
+                      </div>
+                      <div className="flex flex-wrap gap-1.5 md:flex-col md:flex-nowrap md:gap-0.5">
+                        {["All", ...(data.libraries ?? [])].map((l) => (
+                          <button
+                            key={l}
+                            onClick={() => setLibrary(l)}
+                            className={cn(
+                              "rounded-md px-2.5 py-1.5 text-left text-sm transition-colors",
+                              l === library
+                                ? "bg-primary font-medium text-primary-foreground"
+                                : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                            )}
+                          >
+                            {l === "All" ? "All libraries" : l}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                    <div className="flex flex-wrap gap-1.5 md:max-h-[58vh] md:flex-col md:flex-nowrap md:gap-0.5 md:overflow-y-auto md:pr-1">
-                      {["All", ...data.categories].map((c) => (
-                        <button
-                          key={c}
-                          onClick={() => setCat(c)}
-                          className={cn(
-                            "rounded-md px-2.5 py-1.5 text-left text-sm transition-colors",
-                            c === cat
-                              ? "bg-primary font-medium text-primary-foreground"
-                              : "text-muted-foreground hover:bg-accent hover:text-foreground",
-                          )}
-                        >
-                          {c}
-                        </button>
-                      ))}
+                  )}
+
+                  {data.categories.length > 0 && (
+                    <div>
+                      <div className="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        Topic
+                      </div>
+                      <div className="flex flex-wrap gap-1.5 md:max-h-[58vh] md:flex-col md:flex-nowrap md:gap-0.5 md:overflow-y-auto md:pr-1">
+                        {["All", ...data.categories].map((c) => (
+                          <button
+                            key={c}
+                            onClick={() => setCat(c)}
+                            className={cn(
+                              "rounded-md px-2.5 py-1.5 text-left text-sm transition-colors",
+                              c === cat
+                                ? "bg-primary font-medium text-primary-foreground"
+                                : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                            )}
+                          >
+                            {c}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   <div className="space-y-2">
                     {(data.providers ?? []).length >= 2 && (

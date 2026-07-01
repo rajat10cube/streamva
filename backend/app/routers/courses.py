@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
@@ -62,7 +63,9 @@ def list_courses(user: User = Depends(require_user), db: Session = Depends(get_d
     if allowed is not None:
         q = q.where(Course.library_id.in_(allowed))
     rows = db.scalars(q.order_by(Course.position, Course.title)).all()
-    lib_paths = dict(db.execute(select(Library.id, Library.path)).all())
+    lib_rows = db.execute(select(Library.id, Library.name, Library.path)).all()
+    lib_paths = {i: p for i, _n, p in lib_rows}
+    lib_names = {i: (n or Path(p).name) for i, n, p in lib_rows}
 
     completed_map = dict(
         db.execute(
@@ -88,6 +91,7 @@ def list_courses(user: User = Depends(require_user), db: Session = Depends(get_d
             "title": c.title,
             "category": c.category,
             "provider": c.provider,
+            "library": lib_names.get(c.library_id),
             "cover": _cover_url(c, lib_paths.get(c.library_id)),
             "previews": _preview_urls(c, lib_paths.get(c.library_id)),
             "lectureCount": c.lecture_count,
@@ -99,7 +103,13 @@ def list_courses(user: User = Depends(require_user), db: Session = Depends(get_d
     ]
     categories = sorted({c["category"] for c in courses if c["category"]})
     providers = sorted({c["provider"] for c in courses if c["provider"]})
-    return {"courses": courses, "categories": categories, "providers": providers}
+    libraries = sorted({c["library"] for c in courses if c["library"]})
+    return {
+        "courses": courses,
+        "categories": categories,
+        "providers": providers,
+        "libraries": libraries,
+    }
 
 
 @router.get("/{slug}")

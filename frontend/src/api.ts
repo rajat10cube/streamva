@@ -14,6 +14,7 @@ export interface CourseCard {
   title: string;
   category: string | null;
   provider: string | null;
+  library: string | null;
   cover: string | null;
   previews: string[];
   lectureCount: number;
@@ -26,6 +27,7 @@ export interface LibraryResponse {
   courses: CourseCard[];
   categories: string[];
   providers: string[];
+  libraries: string[];
 }
 
 export type Playback = "native" | "mpegts" | "remux" | "document";

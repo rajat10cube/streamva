@@ -34,6 +34,7 @@ function card(over: Partial<CourseCard>): CourseCard {
     title: "Untitled",
     category: null,
     provider: null,
+    library: null,
     cover: null,
     previews: [],
     lectureCount: 5,
@@ -96,6 +97,25 @@ describe("Library page", () => {
 
     expect(screen.queryByText("Udemy Course")).not.toBeInTheDocument();
     expect(screen.getByText("Skillshare Course")).toBeInTheDocument();
+  });
+
+  it("filters by library", async () => {
+    getCourses.mockResolvedValue({
+      courses: [
+        card({ title: "Clip A", library: "Library 1" }),
+        card({ title: "Clip B", library: "Library 2" }),
+      ],
+      categories: [],
+      providers: [],
+      libraries: ["Library 1", "Library 2"],
+    });
+    renderLibrary();
+    await screen.findByText("Clip A");
+
+    await userEvent.click(screen.getByRole("button", { name: "Library 2" }));
+
+    await waitFor(() => expect(screen.queryByText("Clip A")).not.toBeInTheDocument());
+    expect(screen.getByText("Clip B")).toBeInTheDocument();
   });
 
   it("filters by provider independently of topic", async () => {
