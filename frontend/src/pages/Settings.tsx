@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Disc, Folder, FolderUp, KeyRound, Plus, RefreshCw, Trash2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import AppHeader from "@/components/AppHeader";
@@ -313,6 +313,21 @@ function LibrariesTab() {
     refetchInterval: (q) => (q.state.data?.running ? 700 : false),
   });
   const converting = !!bdmvStatus?.running;
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const allTitleIds = useMemo(
+    () => (bdmv?.discs ?? []).flatMap((d) => d.titles.map((t) => t.id)),
+    [bdmv],
+  );
+  const allSelected = allTitleIds.length > 0 && allTitleIds.every((id) => selected.has(id));
+  const toggleTitle = (id: string) =>
+    setSelected((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(allTitleIds));
+
   const wasConverting = useRef(false);
   useEffect(() => {
     if (wasConverting.current && bdmvStatus && !bdmvStatus.running) {
@@ -325,9 +340,10 @@ function LibrariesTab() {
   }, [bdmvStatus?.running]);
   const startConvert = async () => {
     try {
-      await startBdmvConvert();
+      await startBdmvConvert([...selected]);
+      setSelected(new Set());
       qc.invalidateQueries({ queryKey: ["bdmv-status"] });
-      toast.success("Converting Blu-ray discs…");
+      toast.success("Converting selected title(s)…");
     } catch (e) {
       toast.error(errMsg(e));
     }
@@ -456,19 +472,42 @@ function LibrariesTab() {
                 </div>
               </>
             ) : (
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="font-medium">
-                    {bdmv!.count} Blu-ray folder{bdmv!.count === 1 ? "" : "s"} found
-                  </div>
-                  <div className="text-muted-foreground">
-                    {bdmv!.titles} title{bdmv!.titles === 1 ? "" : "s"} to convert to MP4 (saved next to
-                    each disc, then rescanned).
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium">
+                    {bdmv!.count} Blu-ray folder{bdmv!.count === 1 ? "" : "s"} · {bdmv!.titles} title
+                    {bdmv!.titles === 1 ? "" : "s"}
+                  </span>
+                  <div className="flex shrink-0 gap-2">
+                    <Button size="sm" variant="outline" onClick={toggleAll}>
+                      {allSelected ? "Clear" : "Select all"}
+                    </Button>
+                    <Button size="sm" onClick={() => void startConvert()} disabled={selected.size === 0}>
+                      <Disc /> Convert{selected.size ? ` (${selected.size})` : ""}
+                    </Button>
                   </div>
                 </div>
-                <Button className="shrink-0" onClick={() => void startConvert()}>
-                  <Disc /> Convert
-                </Button>
+                <div className="max-h-72 space-y-3 overflow-y-auto pr-1">
+                  {bdmv!.discs.map((d) => (
+                    <div key={d.path}>
+                      <div className="mb-1 truncate text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        {d.name}
+                      </div>
+                      <div className="space-y-1">
+                        {d.titles.map((t) => (
+                          <label key={t.id} className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 hover:bg-accent">
+                            <Checkbox checked={selected.has(t.id)} onCheckedChange={() => toggleTitle(t.id)} />
+                            <span className="flex-1 truncate">{t.label}</span>
+                            {t.segments > 1 && <Badge variant="muted">{t.segments} parts</Badge>}
+                            <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                              {Math.max(1, Math.round(t.durationSec / 60))}m
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>

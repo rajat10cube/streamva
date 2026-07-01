@@ -123,20 +123,14 @@ def _disc_titles(disc: Path) -> list[dict]:
 
 # --- detection ---------------------------------------------------------------
 
-def _already_converted(disc: Path) -> bool:
-    try:
-        return any(f.is_file() and f.suffix.lower() in _OUTPUT_EXTS for f in disc.iterdir())
-    except OSError:
-        return False
-
-
 def _library_roots() -> list[Path]:
     with SessionLocal() as db:
         return [Path(p) for (p,) in db.execute(select(Library.path)).all()]
 
 
-def find_discs() -> list[dict]:
-    discs: list[dict] = []
+def _all_jobs() -> list[dict]:
+    """Every not-yet-converted title across all libraries (with conversion details)."""
+    jobs: list[dict] = []
     seen: set[Path] = set()
     for root in _library_roots():
         if not root.is_dir():
@@ -150,12 +144,30 @@ def find_discs() -> list[dict]:
             if disc in seen or not bdmv.is_dir():
                 continue
             seen.add(disc)
-            if _already_converted(disc):
-                continue
             titles = _disc_titles(disc)
-            if titles:
-                discs.append({"path": str(disc), "name": disc.name, "titles": len(titles)})
-    return sorted(discs, key=lambda d: d["name"])
+            multi = len(titles) > 1
+            for i, t in enumerate(titles, 1):
+                out = _out_path(disc, i, multi)
+                if out.exists():  # this title is already converted
+                    continue
+                jobs.append({
+                    "out": out, "clips": t["clips"], "duration": t["duration"],
+                    "disc_path": str(disc), "disc": disc.name,
+                    "label": out.name, "segments": len(t["clips"]),
+                })
+    return jobs
+
+
+def find_discs() -> list[dict]:
+    """Un-converted titles grouped by disc, for the UI to pick from."""
+    by_disc: dict[str, dict] = {}
+    for j in _all_jobs():
+        d = by_disc.setdefault(j["disc_path"], {"path": j["disc_path"], "name": j["disc"], "titles": []})
+        d["titles"].append({
+            "id": str(j["out"]), "label": j["label"],
+            "durationSec": round(j["duration"]), "segments": j["segments"],
+        })
+    return sorted(by_disc.values(), key=lambda d: d["name"])
 
 
 # --- conversion --------------------------------------------------------------
@@ -198,27 +210,23 @@ def _convert_one(clips: list[Path], out: Path, duration: float) -> bool:
     return False
 
 
-def convert_all() -> dict:
+def convert_all(targets: list[str] | None = None) -> dict:
+    """Convert the given titles (by id/output path), or all un-converted titles."""
     if not _lock.acquire(blocking=False):
         return {"skipped": "conversion already running"}
     try:
-        jobs: list[tuple[list[Path], float, Path]] = []
-        for d in find_discs():
-            disc = Path(d["path"])
-            titles = _disc_titles(disc)
-            multi = len(titles) > 1
-            for i, t in enumerate(titles, 1):
-                out = _out_path(disc, i, multi)
-                if not out.exists():
-                    jobs.append((t["clips"], t["duration"], out))
+        jobs = _all_jobs()
+        if targets:
+            want = set(targets)
+            jobs = [j for j in jobs if str(j["out"]) in want]
 
         _status.update({"running": True, "phase": "converting", "current": None,
                         "done": 0, "total": len(jobs), "percent": 0, "errors": [], "finished": None})
-        for clips, duration, out in jobs:
-            _status["current"] = out.name
+        for j in jobs:
+            _status["current"] = j["label"]
             _status["percent"] = 0
-            if not _convert_one(clips, out, duration):
-                _status["errors"].append({"disc": out.parent.name, "error": f"failed: {out.name}"})
+            if not _convert_one(j["clips"], j["out"], j["duration"]):
+                _status["errors"].append({"disc": j["disc"], "error": f"failed: {j['label']}"})
             _status["done"] += 1
     finally:
         _status.update({"running": False, "phase": "idle", "current": None, "finished": time.time()})

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, BackgroundTasks, Depends
+from pydantic import BaseModel
 
 from ..auth import require_admin
 from ..bdmv import convert_all, convert_status, find_discs
@@ -29,16 +30,21 @@ def status() -> dict:
     return scan_status()
 
 
+class BdmvConvertIn(BaseModel):
+    titles: list[str] | None = None  # title ids (output paths); None/empty = all
+
+
 @router.get("/bdmv")
 def bdmv_discs() -> dict:
-    """Blu-ray (BDMV) disc folders in the libraries that still need converting."""
+    """Blu-ray (BDMV) disc folders + their un-converted titles."""
     discs = find_discs()
-    return {"discs": discs, "count": len(discs), "titles": sum(d["titles"] for d in discs)}
+    return {"discs": discs, "count": len(discs), "titles": sum(len(d["titles"]) for d in discs)}
 
 
 @router.post("/bdmv/convert")
-def bdmv_convert(background: BackgroundTasks) -> dict:
-    background.add_task(convert_all)
+def bdmv_convert(background: BackgroundTasks, body: BdmvConvertIn | None = None) -> dict:
+    targets = body.titles if body and body.titles else None
+    background.add_task(convert_all, targets)
     return {"started": True}
 
 
