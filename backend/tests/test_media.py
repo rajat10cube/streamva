@@ -155,6 +155,28 @@ def test_mkv_remux_is_a_seekable_mp4(tmp_path):
     assert r2.status_code == 206
 
 
+@needs_ffmpeg
+def test_mpeg2_pcm_mkv_streams_transcoded(tmp_path):
+    # MPEG-2 video + PCM audio (browser can't play either) -> live transcode stream
+    vid = tmp_path / "lib" / "Old" / "clip.mkv"
+    vid.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["ffmpeg", "-f", "lavfi", "-i", "testsrc=duration=2:size=320x240:rate=10",
+         "-f", "lavfi", "-i", "sine=frequency=440:duration=2",
+         "-c:v", "mpeg2video", "-c:a", "pcm_s16le", "-shortest", "-y", str(vid)],
+        capture_output=True,
+    )
+    c = TestClient(app)
+    c.post("/api/libraries", json={"path": str(tmp_path / "lib")}, auth=ADMIN)
+    c.post("/api/admin/rescan", params={"wait": "true"}, auth=ADMIN)
+
+    card = next(x for x in c.get("/api/courses", auth=ADMIN).json()["courses"] if x["title"] == "Old")
+    lec = c.get(f"/api/courses/{card['slug']}", auth=ADMIN).json()["sections"][0]["lectures"][0]
+    r = c.get(f"/api/lectures/{lec['id']}/remux", auth=ADMIN)
+    assert r.status_code == 200 and r.headers["content-type"].startswith("video/mp4")
+    assert len(r.content) > 0  # transcoded bytes actually flowed
+
+
 def test_scan_removes_orphan_covers(tmp_path):
     from app.config import get_settings
 

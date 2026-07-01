@@ -16,7 +16,7 @@ from ..auth import require_user
 from ..db import get_db
 from ..models import Course, Lecture, Library, User
 from ..paths import library_root, safe_media_path
-from ..transcode import build_playable_mp4, remux_cache_path
+from ..transcode import remux_cache_path, serve_remuxed
 
 router = APIRouter(prefix="/lectures", tags=["lectures"])
 
@@ -79,13 +79,8 @@ def remux(lecture_id: int, user: User = Depends(require_user), db: Session = Dep
     lib = db.get(Library, course.library_id) if course.library_id else None
     if lib is None:
         raise HTTPException(404, "Library not available")
-    # remux/transcode once into a seekable, faststart MP4, then serve it with
-    # HTTP-range support (correct duration + seeking, unlike a live stream).
-    out = remux_cache_path(lib.path, lec.path)
-    if not out.is_file():
-        if not build_playable_mp4(path, out):
-            raise HTTPException(500, "Could not prepare this video for playback")
-    return FileResponse(out, media_type="video/mp4")
+    # compatible files -> cached seekable MP4; the rest -> live transcode stream
+    return serve_remuxed(path, remux_cache_path(lib.path, lec.path))
 
 
 @router.get("/{lecture_id}/subtitle")
