@@ -145,7 +145,7 @@ describe("Library page", () => {
     await screen.findByText("Blender Basics");
 
     await userEvent.click(screen.getByRole("button", { name: /^options$/i }));
-    await userEvent.click(await screen.findByText("Mark all complete"));
+    await userEvent.click(await screen.findByText("Mark all watched"));
 
     await waitFor(() => expect(completeCourse).toHaveBeenCalledWith("blender"));
   });

@@ -72,7 +72,7 @@ function CourseMenu({ c }: { c: CourseCard }) {
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuItem onSelect={() => complete.mutate()}>
-            <Check /> Mark all complete
+            <Check /> Mark all watched
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
@@ -146,7 +146,7 @@ function CourseCardView({ c }: { c: CourseCard }) {
       <div className="absolute right-2 top-2 z-10">
         <CourseMenu c={c} />
       </div>
-      <Link to={`/course/${encodeURIComponent(c.slug)}`} className="block">
+      <Link to={`/watch/${encodeURIComponent(c.slug)}`} className="block">
         <div className="relative aspect-video bg-muted">
           {c.cover ? (
             <img src={c.cover} alt="" loading="lazy" className="h-full w-full object-cover" />
@@ -289,7 +289,7 @@ export default function Library() {
                   {lessonHits.map((r) => (
                     <Link
                       key={`l${r.refId}`}
-                      to={`/course/${encodeURIComponent(r.slug)}?lecture=${r.refId}`}
+                      to={`/watch/${encodeURIComponent(r.slug)}?lecture=${r.refId}`}
                       className="flex items-center justify-between gap-3 px-4 py-2.5 hover:bg-accent"
                     >
                       <span className="font-medium">{r.title}</span>
@@ -350,7 +350,7 @@ export default function Library() {
                     >
                       <option value="all">All videos</option>
                       <option value="inprogress">In progress</option>
-                      <option value="completed">Completed</option>
+                      <option value="completed">Watched</option>
                       <option value="notstarted">Not started</option>
                     </select>
                     <select

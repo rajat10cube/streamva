@@ -190,7 +190,7 @@ export default function CoursePage() {
                     className="shrink-0"
                     onClick={() => void toggleComplete()}
                   >
-                    <Check /> {progress[current.id]?.completed ? "Completed" : "Mark complete"}
+                    <Check /> {progress[current.id]?.completed ? "Watched" : "Mark watched"}
                   </Button>
                 </div>
                 <Notes
@@ -332,7 +332,7 @@ export default function CoursePage() {
                       variant={progress[current.id]?.completed ? "default" : "outline"}
                       onClick={() => void toggleComplete()}
                     >
-                      <Check /> {progress[current.id]?.completed ? "Completed" : "Mark complete"}
+                      <Check /> {progress[current.id]?.completed ? "Watched" : "Mark watched"}
                     </Button>
                     <Button variant="secondary" onClick={playNext} disabled={idx < 0 || idx + 1 >= flat.length}>
                       Next <ChevronRight />

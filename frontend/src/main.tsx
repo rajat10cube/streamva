@@ -24,7 +24,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
             <Routes>
               <Route path="/" element={<Library />} />
               <Route path="/settings" element={<Settings />} />
-              <Route path="/course/:slug" element={<CoursePage />} />
+              <Route path="/watch/:slug" element={<CoursePage />} />
             </Routes>
           </AuthGate>
         </BrowserRouter>
