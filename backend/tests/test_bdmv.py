@@ -117,6 +117,33 @@ def test_delete_outputs_only_removes_known_converted(tmp_path, monkeypatch):
     assert bogus.exists()     # a path outside known outputs is refused
 
 
+def test_build_cmd_burns_subtitles_only_when_requested(tmp_path):
+    clips = [tmp_path / "a.m2ts"]
+    on = " ".join(bdmv._build_cmd(clips, tmp_path / "o.tmp.mp4", True))
+    off = " ".join(bdmv._build_cmd(clips, tmp_path / "o.tmp.mp4", False))
+    assert "-filter_complex" in on and "[0:s:0]overlay" in on
+    assert "-filter_complex" not in off and "-map 0:v:0" in off
+
+
+@needs_ffmpeg
+def test_first_subtitle_index_detects_subs(tmp_path):
+    srt = tmp_path / "s.srt"
+    srt.write_text("1\n00:00:00,000 --> 00:00:01,000\nhi\n", encoding="utf-8")
+    withsub = tmp_path / "withsub.mkv"
+    subprocess.run(
+        ["ffmpeg", "-f", "lavfi", "-i", "testsrc=d=1:s=64x64:r=5", "-i", str(srt),
+         "-c:v", "libx264", "-c:s", "srt", "-y", str(withsub)],
+        capture_output=True,
+    )
+    nosub = tmp_path / "nosub.mp4"
+    subprocess.run(
+        ["ffmpeg", "-f", "lavfi", "-i", "testsrc=d=1:s=64x64:r=5", "-c:v", "libx264", "-y", str(nosub)],
+        capture_output=True,
+    )
+    assert bdmv._first_subtitle_index(withsub) == 0
+    assert bdmv._first_subtitle_index(nosub) is None
+
+
 @needs_ffmpeg
 def test_convert_one_produces_playable_mp4(tmp_path):
     src = tmp_path / "title.m2ts"

@@ -296,12 +296,12 @@ export interface BdmvStatus {
 
 export const getBdmvDiscs = () => getJSON<BdmvDiscs>("/admin/bdmv");
 export const getBdmvStatus = () => getJSON<BdmvStatus>("/admin/bdmv/status");
-export async function startBdmvConvert(titles?: string[]): Promise<void> {
+export async function startBdmvConvert(titles?: string[], burnSubs?: boolean): Promise<void> {
   await fetch(`${BASE}/admin/bdmv/convert`, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ titles: titles ?? null }),
+    body: JSON.stringify({ titles: titles ?? null, burn_subs: !!burnSubs }),
   });
 }
 export async function deleteBdmvTitles(titles: string[]): Promise<void> {
