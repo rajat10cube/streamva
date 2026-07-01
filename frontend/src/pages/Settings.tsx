@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Folder, FolderUp, KeyRound, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { AlertTriangle, Disc, Folder, FolderUp, KeyRound, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -37,9 +37,12 @@ import {
   createUser,
   deleteLibrary,
   deleteUser,
+  getBdmvDiscs,
+  getBdmvStatus,
   getLibraries,
   getScanStatus,
   getUsers,
+  startBdmvConvert,
   rescanAll,
   resetUserPassword,
   setUserAccess,
@@ -302,6 +305,34 @@ function LibrariesTab() {
     qc.invalidateQueries({ queryKey: ["courses"] });
   };
 
+  // Blu-ray (BDMV) folders detected + conversion progress
+  const { data: bdmv } = useQuery({ queryKey: ["bdmv"], queryFn: getBdmvDiscs });
+  const { data: bdmvStatus } = useQuery({
+    queryKey: ["bdmv-status"],
+    queryFn: getBdmvStatus,
+    refetchInterval: (q) => (q.state.data?.running ? 700 : false),
+  });
+  const converting = !!bdmvStatus?.running;
+  const wasConverting = useRef(false);
+  useEffect(() => {
+    if (wasConverting.current && bdmvStatus && !bdmvStatus.running) {
+      qc.invalidateQueries({ queryKey: ["bdmv"] });
+      refresh();
+      toast.success(`Converted ${bdmvStatus.done} title(s)`);
+    }
+    wasConverting.current = !!bdmvStatus?.running;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bdmvStatus?.running]);
+  const startConvert = async () => {
+    try {
+      await startBdmvConvert();
+      qc.invalidateQueries({ queryKey: ["bdmv-status"] });
+      toast.success("Converting Blu-ray discs…");
+    } catch (e) {
+      toast.error(errMsg(e));
+    }
+  };
+
   // only surface errors for libraries that still exist (hide stale ones, e.g. a removed "/")
   const livePaths = new Set((libs ?? []).map((l) => l.path));
   const visibleErrors = (scan?.errors ?? []).filter((e) => livePaths.has(e.library));
@@ -404,6 +435,42 @@ function LibrariesTab() {
                 <span className="font-mono text-foreground">{e.library}</span> — {e.error}
               </div>
             ))}
+          </div>
+        )}
+
+        {(converting || (bdmv?.count ?? 0) > 0) && (
+          <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm">
+            {converting ? (
+              <>
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <span className="truncate">Converting {bdmvStatus?.current ?? "…"}</span>
+                  <span className="shrink-0 text-muted-foreground">
+                    {bdmvStatus?.done}/{bdmvStatus?.total} · {bdmvStatus?.percent}%
+                  </span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full bg-primary transition-all"
+                    style={{ width: `${bdmvStatus?.percent ?? 0}%` }}
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="font-medium">
+                    {bdmv!.count} Blu-ray folder{bdmv!.count === 1 ? "" : "s"} found
+                  </div>
+                  <div className="text-muted-foreground">
+                    {bdmv!.titles} title{bdmv!.titles === 1 ? "" : "s"} to convert to MP4 (saved next to
+                    each disc, then rescanned).
+                  </div>
+                </div>
+                <Button className="shrink-0" onClick={() => void startConvert()}>
+                  <Disc /> Convert
+                </Button>
+              </div>
+            )}
           </div>
         )}
 

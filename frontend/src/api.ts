@@ -262,6 +262,29 @@ export interface ScanStatus {
 
 export const getScanStatus = () => getJSON<ScanStatus>("/admin/scan-status");
 
+export interface BdmvDiscs {
+  discs: { path: string; name: string; titles: number }[];
+  count: number;
+  titles: number;
+}
+
+export interface BdmvStatus {
+  running: boolean;
+  phase: string;
+  current: string | null;
+  done: number;
+  total: number;
+  percent: number;
+  errors: { disc: string; error: string }[];
+  finished: number | null;
+}
+
+export const getBdmvDiscs = () => getJSON<BdmvDiscs>("/admin/bdmv");
+export const getBdmvStatus = () => getJSON<BdmvStatus>("/admin/bdmv/status");
+export async function startBdmvConvert(): Promise<void> {
+  await fetch(`${BASE}/admin/bdmv/convert`, { method: "POST", credentials: "include" });
+}
+
 export async function putProgress(lectureId: number, body: ProgressIn): Promise<void> {
   await fetch(`${BASE}/progress/${lectureId}`, {
     method: "PUT",
