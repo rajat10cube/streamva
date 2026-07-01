@@ -84,6 +84,46 @@ if [ ! -f "$ENV_FILE" ]; then
   } > "$ENV_FILE"
 fi
 
+# --- hardware transcoding (Intel Quick Sync) --------------------------------
+# If a GPU is passed into the container (/dev/dri), set up jellyfin-ffmpeg — a
+# self-contained ffmpeg bundling a modern Intel VA driver — and enable VAAPI.
+# Streamva self-tests HW at runtime and falls back to software if it doesn't
+# work, so this is safe. Skip with SKIP_HWACCEL=1.
+if [ "${SKIP_HWACCEL:-0}" != "1" ] && [ -e /dev/dri/renderD128 ]; then
+  msg "GPU detected (/dev/dri) — setting up hardware transcoding…"
+  if [ ! -x /usr/lib/jellyfin-ffmpeg/ffmpeg ]; then
+    apt-get install -y -qq gnupg >/dev/null || true
+    mkdir -p /etc/apt/keyrings
+    curl -fsSL https://repo.jellyfin.org/jellyfin_team.gpg.key \
+      | gpg --dearmor -o /etc/apt/keyrings/jellyfin.gpg 2>/dev/null || true
+    . /etc/os-release
+    cat > /etc/apt/sources.list.d/jellyfin.sources <<EOF
+Types: deb
+URIs: https://repo.jellyfin.org/debian
+Suites: ${VERSION_CODENAME:-bookworm}
+Components: main
+Architectures: amd64
+Signed-By: /etc/apt/keyrings/jellyfin.gpg
+EOF
+    apt-get update -qq >/dev/null || true
+    apt-get install -y -qq jellyfin-ffmpeg7 >/dev/null \
+      || msg "jellyfin-ffmpeg install failed — Streamva will use software transcode."
+  fi
+  # let the service user access the render device
+  RGRP=$(getent group "$(stat -c '%g' /dev/dri/renderD128 2>/dev/null)" 2>/dev/null | cut -d: -f1)
+  [ -n "$RGRP" ] && usermod -aG "$RGRP" "$SERVICE_USER" 2>/dev/null || true
+  # point Streamva at jellyfin-ffmpeg + enable VAAPI (only if not already set)
+  if [ -x /usr/lib/jellyfin-ffmpeg/ffmpeg ] && ! grep -q '^STREAMVA_HWACCEL=' "$ENV_FILE"; then
+    {
+      echo "STREAMVA_HWACCEL=vaapi"
+      echo "STREAMVA_FFMPEG_PATH=/usr/lib/jellyfin-ffmpeg/ffmpeg"
+      echo "STREAMVA_FFPROBE_PATH=/usr/lib/jellyfin-ffmpeg/ffprobe"
+      echo "STREAMVA_LIBVA_DRIVERS_PATH=/usr/lib/jellyfin-ffmpeg/lib/dri"
+    } >> "$ENV_FILE"
+    msg "Hardware transcoding enabled (VAAPI via jellyfin-ffmpeg)."
+  fi
+fi
+
 chown -R "$SERVICE_USER:$SERVICE_USER" "$APP_DIR" "$DATA_DIR"
 chmod 600 "$ENV_FILE"
 
