@@ -50,6 +50,42 @@ def remux_cache_path(lib_path: str, lecture_rel: str) -> Path:
     return remux_dir() / f"{cover_token(lib_path, lecture_rel)}.mp4"
 
 
+def audio_variant_path(lib_path: str, lecture_rel: str, audio_idx: int) -> Path:
+    return remux_dir() / f"{cover_token(lib_path, lecture_rel)}.a{audio_idx}.mp4"
+
+
+def serve_audio_variant(src: Path, cache: Path, audio_idx: int) -> Response:
+    """Serve the video with only audio track ``audio_idx`` (cached, seekable)."""
+    if not ffmpeg_available():
+        raise HTTPException(503, "ffmpeg is not available")
+    if not cache.is_file() and not _copy_audio(src, cache, audio_idx):
+        raise HTTPException(500, "Could not prepare that audio track")
+    return FileResponse(cache, media_type="video/mp4")
+
+
+def _copy_audio(src: Path, out: Path, audio_idx: int) -> bool:
+    """Stream-copy the video + one chosen audio track into a seekable faststart MP4."""
+    out.parent.mkdir(parents=True, exist_ok=True)
+    tmp = out.with_suffix(".tmp.mp4")
+    cmd = [ffmpeg_bin(), "-hide_banner", "-loglevel", "error", "-y", "-i", str(src),
+           "-map", "0:v:0", "-map", f"0:a:{audio_idx}", "-c", "copy",
+           "-movflags", "+faststart", str(tmp)]
+    try:
+        r = subprocess.run(cmd, capture_output=True, timeout=1800)
+    except (subprocess.SubprocessError, OSError) as e:
+        logger.error("audio variant failed to start for %s: %r", src, e)
+        tmp.unlink(missing_ok=True)
+        return False
+    if r.returncode == 0 and tmp.exists() and tmp.stat().st_size > 0:
+        tmp.replace(out)
+        _evict_cache()
+        return True
+    logger.error("audio variant failed (rc=%s) for %s: %s", r.returncode, src,
+                 (r.stderr or b"").decode("utf-8", "replace")[-500:])
+    tmp.unlink(missing_ok=True)
+    return False
+
+
 def _probe(path: Path, stream: str, entries: str) -> list[str]:
     try:
         out = subprocess.run(

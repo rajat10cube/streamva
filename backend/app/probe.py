@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 from pathlib import Path
@@ -71,6 +72,29 @@ def generate_previews(
         if out.exists() and out.stat().st_size > 0:
             made += 1
     return made
+
+
+def audio_tracks(path: Path) -> list[dict]:
+    """List audio streams as [{index (audio-relative), language, title, channels}]."""
+    try:
+        out = subprocess.run(
+            [ffprobe_bin(), "-v", "error", "-select_streams", "a",
+             "-show_entries", "stream=channels:stream_tags=language,title", "-of", "json", str(path)],
+            capture_output=True, text=True, timeout=30,
+        )
+        data = json.loads(out.stdout or "{}")
+    except (subprocess.SubprocessError, OSError, ValueError):
+        return []
+    tracks = []
+    for i, s in enumerate(data.get("streams") or []):
+        tags = s.get("tags") or {}
+        tracks.append({
+            "index": i,
+            "language": tags.get("language"),
+            "title": tags.get("title"),
+            "channels": s.get("channels"),
+        })
+    return tracks
 
 
 def probe_duration(path: Path) -> float | None:

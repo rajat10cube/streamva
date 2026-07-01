@@ -4,9 +4,16 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "re
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { readPrefs, writePrefs } from "@/lib/prefs";
-import type { LectureItem } from "@/api";
+import { getAudioTracks, type AudioTrack, type LectureItem } from "@/api";
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+
+function audioLabel(t: AudioTrack, i: number): string {
+  const lang = t.language && t.language !== "und" ? t.language.toUpperCase() : null;
+  const base = t.title || lang || `Track ${i + 1}`;
+  const ch = t.channels === 2 ? " · 2.0" : t.channels === 6 ? " · 5.1" : t.channels ? ` · ${t.channels}ch` : "";
+  return base + ch;
+}
 
 export interface PlayerHandle {
   seek: (t: number) => void;
@@ -45,6 +52,30 @@ const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
   const [err, setErr] = useState(false);
   const [rate, setRate] = useState(() => readPrefs().rate);
   const [autoplay, setAutoplay] = useState(() => readPrefs().autoplayNext);
+  const [audioTracks, setAudioTracks] = useState<AudioTrack[]>([]);
+  const [audioIndex, setAudioIndex] = useState(0);
+  const resumeAt = useRef<{ time: number; playing: boolean } | null>(null);
+
+  // fetch the file's audio tracks (reset when the lecture changes)
+  useEffect(() => {
+    setAudioTracks([]);
+    setAudioIndex(0);
+    resumeAt.current = null;
+    if (lecture.playback === "remux" || lecture.playback === "document") return;
+    let cancelled = false;
+    getAudioTracks(lecture.id)
+      .then((t) => !cancelled && setAudioTracks(t))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [lecture.id, lecture.playback]);
+
+  const switchAudio = (n: number) => {
+    const v = ref.current;
+    resumeAt.current = v ? { time: v.currentTime, playing: !v.paused } : null;
+    setAudioIndex(n);
+  };
 
   const changeRate = (r: number) => {
     setRate(r);
@@ -104,7 +135,11 @@ const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
   }, [lecture.playback, onNext]);
 
   const mediaUrl =
-    lecture.playback === "remux" ? `/api/lectures/${lecture.id}/remux` : lecture.stream;
+    lecture.playback === "remux"
+      ? `/api/lectures/${lecture.id}/remux`
+      : audioIndex > 0
+        ? `${lecture.stream}?audio=${audioIndex}`
+        : lecture.stream;
 
   useEffect(() => {
     setErr(false);
@@ -137,6 +172,18 @@ const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
     v.playbackRate = rate;
     v.volume = p.volume;
     v.muted = p.muted;
+    // resuming after an audio-track switch: restore position + play state
+    const resume = resumeAt.current;
+    if (resume) {
+      resumeAt.current = null;
+      try {
+        v.currentTime = resume.time;
+      } catch {
+        /* not seekable yet */
+      }
+      if (resume.playing) void v.play();
+      return;
+    }
     if (startPosition > 2 && (!v.duration || startPosition < v.duration - 1)) {
       try {
         v.currentTime = startPosition;
@@ -222,6 +269,20 @@ const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
           </label>
         )}
         <div className="flex items-center gap-2">
+          {audioTracks.length > 1 && (
+            <>
+              <span>Audio</span>
+              <select
+                value={audioIndex}
+                onChange={(e) => switchAudio(Number(e.target.value))}
+                className="h-8 max-w-[9rem] rounded-md border border-input bg-background px-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {audioTracks.map((t, i) => (
+                  <option key={i} value={i}>{audioLabel(t, i)}</option>
+                ))}
+              </select>
+            </>
+          )}
           <span>Speed</span>
           <select
             value={rate}

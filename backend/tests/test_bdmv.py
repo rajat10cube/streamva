@@ -9,7 +9,7 @@ import pytest
 from app import bdmv
 from app.db import SessionLocal, init_db
 from app.models import Library
-from app.probe import ffmpeg_available
+from app.probe import audio_tracks, ffmpeg_available
 
 init_db()
 
@@ -117,31 +117,27 @@ def test_delete_outputs_only_removes_known_converted(tmp_path, monkeypatch):
     assert bogus.exists()     # a path outside known outputs is refused
 
 
-def test_build_cmd_burns_subtitles_only_when_requested(tmp_path):
-    clips = [tmp_path / "a.m2ts"]
-    on = " ".join(bdmv._build_cmd(clips, tmp_path / "o.tmp.mp4", True))
-    off = " ".join(bdmv._build_cmd(clips, tmp_path / "o.tmp.mp4", False))
-    assert "-filter_complex" in on and "[0:s:0]overlay" in on
-    assert "-filter_complex" not in off and "-map 0:v:0" in off
+def test_build_cmd_keeps_all_audio_tracks(tmp_path):
+    cmd = " ".join(bdmv._build_cmd([tmp_path / "a.m2ts"], tmp_path / "o.tmp.mp4"))
+    assert "-map 0:v:0" in cmd and "-map 0:a?" in cmd  # video + every audio track
+    assert "-filter_complex" not in cmd                # no subtitle burn-in
 
 
 @needs_ffmpeg
-def test_first_subtitle_index_detects_subs(tmp_path):
-    srt = tmp_path / "s.srt"
-    srt.write_text("1\n00:00:00,000 --> 00:00:01,000\nhi\n", encoding="utf-8")
-    withsub = tmp_path / "withsub.mkv"
+def test_audio_tracks_lists_all_streams_with_language(tmp_path):
+    out = tmp_path / "dual.mp4"
     subprocess.run(
-        ["ffmpeg", "-f", "lavfi", "-i", "testsrc=d=1:s=64x64:r=5", "-i", str(srt),
-         "-c:v", "libx264", "-c:s", "srt", "-y", str(withsub)],
+        ["ffmpeg", "-f", "lavfi", "-i", "testsrc=d=1:s=64x64:r=5",
+         "-f", "lavfi", "-i", "sine=frequency=440:d=1",
+         "-f", "lavfi", "-i", "sine=frequency=880:d=1",
+         "-map", "0:v", "-map", "1:a", "-map", "2:a",
+         "-metadata:s:a:0", "language=jpn", "-metadata:s:a:1", "language=eng",
+         "-c:v", "libx264", "-c:a", "aac", "-y", str(out)],
         capture_output=True,
     )
-    nosub = tmp_path / "nosub.mp4"
-    subprocess.run(
-        ["ffmpeg", "-f", "lavfi", "-i", "testsrc=d=1:s=64x64:r=5", "-c:v", "libx264", "-y", str(nosub)],
-        capture_output=True,
-    )
-    assert bdmv._first_subtitle_index(withsub) == 0
-    assert bdmv._first_subtitle_index(nosub) is None
+    tracks = audio_tracks(out)
+    assert [t["index"] for t in tracks] == [0, 1]
+    assert tracks[0]["language"] == "jpn" and tracks[1]["language"] == "eng"
 
 
 @needs_ffmpeg

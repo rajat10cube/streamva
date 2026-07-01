@@ -16,7 +16,8 @@ from ..auth import require_user
 from ..db import get_db
 from ..models import Course, Lecture, Library, User
 from ..paths import library_root, safe_media_path
-from ..transcode import remux_cache_path, serve_remuxed
+from ..probe import audio_tracks
+from ..transcode import audio_variant_path, remux_cache_path, serve_audio_variant, serve_remuxed
 
 router = APIRouter(prefix="/lectures", tags=["lectures"])
 
@@ -57,12 +58,32 @@ def get_lecture(
     }
 
 
-@router.get("/{lecture_id}/stream")
-def stream(lecture_id: int, user: User = Depends(require_user), db: Session = Depends(get_db)):
+@router.get("/{lecture_id}/audio-tracks")
+def audio_track_list(
+    lecture_id: int, user: User = Depends(require_user), db: Session = Depends(get_db)
+) -> list[dict]:
     lec, _course, root = _resolve(db, lecture_id, user)
+    path = safe_media_path(root, lec.path)
+    return audio_tracks(path) if path is not None else []
+
+
+@router.get("/{lecture_id}/stream")
+def stream(
+    lecture_id: int,
+    audio: int | None = None,
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    lec, course, root = _resolve(db, lecture_id, user)
     path = safe_media_path(root, lec.path)
     if path is None:
         raise HTTPException(404, "File not found")
+    # a specific (non-default) audio track -> serve a cached single-audio variant
+    if audio is not None and audio > 0:
+        lib = db.get(Library, course.library_id) if course.library_id else None
+        if lib is None:
+            raise HTTPException(404, "Library not available")
+        return serve_audio_variant(path, audio_variant_path(lib.path, lec.path, audio), audio)
     ctype = lec.mime or mimetypes.guess_type(path.name)[0] or "application/octet-stream"
     # FileResponse streams the file efficiently and handles HTTP Range (seeking)
     # natively, plus ETag/Last-Modified caching — far better than a hand-rolled

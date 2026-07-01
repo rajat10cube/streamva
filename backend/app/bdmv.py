@@ -23,7 +23,7 @@ from sqlalchemy import select
 
 from .db import SessionLocal
 from .models import Library
-from .probe import ffmpeg_bin, ffprobe_bin, probe_duration
+from .probe import ffmpeg_bin, probe_duration
 from .transcode import _hw_env, _video_encode
 
 logger = logging.getLogger("streamva.bdmv")
@@ -205,37 +205,19 @@ def _out_path(disc: Path, index: int, multi: bool) -> Path:
     return disc / f"{stem}.mp4"
 
 
-def _first_subtitle_index(src: Path) -> int | None:
-    """Return 0 if the source has a subtitle stream (to burn the first one in), else None."""
-    try:
-        out = subprocess.run(
-            [ffprobe_bin(), "-v", "error", "-select_streams", "s",
-             "-show_entries", "stream=index", "-of", "csv=p=0", str(src)],
-            capture_output=True, text=True, timeout=30,
-        )
-    except (subprocess.SubprocessError, OSError):
-        return None
-    return 0 if out.stdout.strip() else None
-
-
-def _build_cmd(clips: list[Path], tmp: Path, burn_sub: bool) -> list[str]:
+def _build_cmd(clips: list[Path], tmp: Path) -> list[str]:
     if len(clips) == 1:
         input_args = ["-i", str(clips[0])]
     else:  # seamless-branched: byte-concat the MPEG-TS segments
         input_args = ["-i", "concat:" + "|".join(str(c) for c in clips)]
     in_flags, vf, venc = _video_encode()
-    hw_filter = vf[1] if vf else ""  # "format=nv12,hwupload…" for HW, "" for software
-    if burn_sub:  # overlay the first (bitmap/PGS) subtitle onto the video, then the HW-upload chain
-        chain = "[0:v:0][0:s:0]overlay" + (f",{hw_filter}" if hw_filter else "")
-        maps = ["-filter_complex", f"{chain}[v]", "-map", "[v]", "-map", "0:a:0?"]
-    else:
-        maps = ["-map", "0:v:0", "-map", "0:a:0?", *vf]
+    # keep the video + *all* audio tracks (each to AAC) so the player can switch language
     return [ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "error", *in_flags, *input_args,
-            *maps, *venc, "-c:a", "aac", "-b:a", "192k",
+            "-map", "0:v:0", "-map", "0:a?", *vf, *venc, "-c:a", "aac", "-b:a", "192k",
             "-movflags", "+faststart", "-progress", "pipe:1", "-nostats", str(tmp)]
 
 
-def _convert_one(clips: list[Path], out: Path, duration: float, burn_subs: bool = False) -> str | None:
+def _convert_one(clips: list[Path], out: Path, duration: float) -> str | None:
     """Convert one title. Returns None on success, else a short error message."""
     try:
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -244,11 +226,10 @@ def _convert_one(clips: list[Path], out: Path, duration: float, burn_subs: bool 
     if not os.access(out.parent, os.W_OK):
         return "library is read-only — remount it read-write to save the MP4"
 
-    burn = burn_subs and _first_subtitle_index(clips[0]) is not None
     tmp = out.with_suffix(".tmp.mp4")
-    cmd = _build_cmd(clips, tmp, burn)
+    cmd = _build_cmd(clips, tmp)
     env = _hw_env() if _video_encode()[0] else None
-    logger.info("bdmv: converting %s (%d segment(s), subs=%s) -> %s", out.stem, len(clips), burn, out)
+    logger.info("bdmv: converting %s (%d segment(s)) -> %s", out.stem, len(clips), out)
     try:
         with tempfile.TemporaryFile() as errf:  # capture stderr without deadlocking the progress pipe
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=errf, text=True, env=env)
@@ -284,7 +265,7 @@ def _convert_one(clips: list[Path], out: Path, duration: float, burn_subs: bool 
     return None
 
 
-def convert_all(targets: list[str] | None = None, burn_subs: bool = False) -> dict:
+def convert_all(targets: list[str] | None = None) -> dict:
     """Convert the given titles (by id/output path), or all un-converted titles."""
     if not _lock.acquire(blocking=False):
         return {"skipped": "conversion already running"}
@@ -299,7 +280,7 @@ def convert_all(targets: list[str] | None = None, burn_subs: bool = False) -> di
         for j in jobs:
             _status["current"] = j["label"]
             _status["percent"] = 0
-            err = _convert_one(j["clips"], j["out"], j["duration"], burn_subs)
+            err = _convert_one(j["clips"], j["out"], j["duration"])
             if err:
                 _status["errors"].append({"disc": j["disc"], "title": j["label"], "error": err})
             _status["done"] += 1

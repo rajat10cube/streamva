@@ -335,7 +335,6 @@ function LibrariesTab() {
       return n;
     });
   const toggleAll = () => setSelected(allSelected ? new Set() : new Set(pendingIds));
-  const [burnSubs, setBurnSubs] = useState(true);
 
   const wasConverting = useRef(false);
   useEffect(() => {
@@ -353,7 +352,7 @@ function LibrariesTab() {
   const startConvert = async () => {
     try {
       setStarting(true); // show the bar immediately, before the first status poll
-      await startBdmvConvert([...selected], burnSubs);
+      await startBdmvConvert([...selected]);
       setSelected(new Set());
       qc.invalidateQueries({ queryKey: ["bdmv-status"] });
       toast.success("Converting selected title(s)…");
@@ -509,9 +508,6 @@ function LibrariesTab() {
                     {bdmv!.converted > 0 && ` · ${bdmv!.converted} converted`}
                   </span>
                   <div className="flex shrink-0 items-center gap-2">
-                    <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground" title="Overlay the first subtitle track onto the video (permanent)">
-                      <Checkbox checked={burnSubs} onCheckedChange={(v) => setBurnSubs(!!v)} /> Subtitles
-                    </label>
                     {pendingIds.length > 0 && (
                       <Button size="sm" variant="outline" onClick={toggleAll}>
                         {allSelected ? "Clear" : "Select all"}

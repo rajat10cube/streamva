@@ -46,6 +46,16 @@ export interface LectureItem {
   subtitle: string | null;
 }
 
+export interface AudioTrack {
+  index: number;
+  language: string | null;
+  title: string | null;
+  channels: number | null;
+}
+
+export const getAudioTracks = (lectureId: number) =>
+  getJSON<AudioTrack[]>(`/lectures/${lectureId}/audio-tracks`);
+
 export interface SectionItem {
   id: number;
   title: string;
@@ -296,12 +306,12 @@ export interface BdmvStatus {
 
 export const getBdmvDiscs = () => getJSON<BdmvDiscs>("/admin/bdmv");
 export const getBdmvStatus = () => getJSON<BdmvStatus>("/admin/bdmv/status");
-export async function startBdmvConvert(titles?: string[], burnSubs?: boolean): Promise<void> {
+export async function startBdmvConvert(titles?: string[]): Promise<void> {
   await fetch(`${BASE}/admin/bdmv/convert`, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ titles: titles ?? null, burn_subs: !!burnSubs }),
+    body: JSON.stringify({ titles: titles ?? null }),
   });
 }
 export async function deleteBdmvTitles(titles: string[]): Promise<void> {

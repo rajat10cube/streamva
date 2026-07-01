@@ -32,7 +32,6 @@ def status() -> dict:
 
 class BdmvConvertIn(BaseModel):
     titles: list[str] | None = None  # title ids (output paths); None/empty = all
-    burn_subs: bool = False          # overlay the first subtitle track onto the video
 
 
 @router.get("/bdmv")
@@ -51,7 +50,7 @@ def bdmv_discs() -> dict:
 @router.post("/bdmv/convert")
 def bdmv_convert(background: BackgroundTasks, body: BdmvConvertIn | None = None) -> dict:
     targets = body.titles if body and body.titles else None
-    background.add_task(convert_all, targets, bool(body and body.burn_subs))
+    background.add_task(convert_all, targets)
     return {"started": True}
 
 
