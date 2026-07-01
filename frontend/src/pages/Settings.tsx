@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Disc, Folder, FolderUp, KeyRound, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { AlertTriangle, Check, Disc, Folder, FolderUp, KeyRound, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -35,6 +35,7 @@ import {
   browse,
   changeMyPassword,
   createUser,
+  deleteBdmvTitles,
   deleteLibrary,
   deleteUser,
   getBdmvDiscs,
@@ -321,11 +322,11 @@ function LibrariesTab() {
     if (running) setStarting(false); // real progress arrived
   }, [running]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const allTitleIds = useMemo(
-    () => (bdmv?.discs ?? []).flatMap((d) => d.titles.map((t) => t.id)),
+  const pendingIds = useMemo(
+    () => (bdmv?.discs ?? []).flatMap((d) => d.titles.filter((t) => !t.converted).map((t) => t.id)),
     [bdmv],
   );
-  const allSelected = allTitleIds.length > 0 && allTitleIds.every((id) => selected.has(id));
+  const allSelected = pendingIds.length > 0 && pendingIds.every((id) => selected.has(id));
   const toggleTitle = (id: string) =>
     setSelected((s) => {
       const n = new Set(s);
@@ -333,14 +334,17 @@ function LibrariesTab() {
       else n.add(id);
       return n;
     });
-  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(allTitleIds));
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(pendingIds));
 
   const wasConverting = useRef(false);
   useEffect(() => {
     if (wasConverting.current && bdmvStatus && !bdmvStatus.running) {
       qc.invalidateQueries({ queryKey: ["bdmv"] });
       refresh();
-      toast.success(`Converted ${bdmvStatus.done} title(s)`);
+      const failed = bdmvStatus.errors?.length ?? 0;
+      const ok = bdmvStatus.done - failed;
+      if (failed) toast.error(`Converted ${ok}, ${failed} failed — see details below`);
+      else toast.success(`Converted ${ok} title${ok === 1 ? "" : "s"}`);
     }
     wasConverting.current = !!bdmvStatus?.running;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -355,6 +359,17 @@ function LibrariesTab() {
       setTimeout(() => setStarting(false), 12000); // safety, if it never actually starts
     } catch (e) {
       setStarting(false);
+      toast.error(errMsg(e));
+    }
+  };
+  const deleteTitle = async (t: { id: string; label: string }) => {
+    if (!window.confirm(`Delete the converted file “${t.label}”?`)) return;
+    try {
+      await deleteBdmvTitles([t.id]);
+      qc.invalidateQueries({ queryKey: ["bdmv"] });
+      refresh();
+      toast.success("Deleted");
+    } catch (e) {
       toast.error(errMsg(e));
     }
   };
@@ -489,18 +504,31 @@ function LibrariesTab() {
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-medium">
-                    {bdmv!.count} Blu-ray folder{bdmv!.count === 1 ? "" : "s"} · {bdmv!.titles} title
-                    {bdmv!.titles === 1 ? "" : "s"}
+                    {bdmv!.count} Blu-ray folder{bdmv!.count === 1 ? "" : "s"} · {bdmv!.pending} to convert
+                    {bdmv!.converted > 0 && ` · ${bdmv!.converted} converted`}
                   </span>
                   <div className="flex shrink-0 gap-2">
-                    <Button size="sm" variant="outline" onClick={toggleAll}>
-                      {allSelected ? "Clear" : "Select all"}
-                    </Button>
+                    {pendingIds.length > 0 && (
+                      <Button size="sm" variant="outline" onClick={toggleAll}>
+                        {allSelected ? "Clear" : "Select all"}
+                      </Button>
+                    )}
                     <Button size="sm" onClick={() => void startConvert()} disabled={selected.size === 0}>
                       <Disc /> Convert{selected.size ? ` (${selected.size})` : ""}
                     </Button>
                   </div>
                 </div>
+
+                {(bdmvStatus?.errors?.length ?? 0) > 0 && (
+                  <div className="space-y-0.5 rounded border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive">
+                    {bdmvStatus!.errors.map((e, i) => (
+                      <div key={i}>
+                        <span className="font-medium">{e.title ?? e.disc}</span> — {e.error}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 <div className="max-h-72 space-y-3 overflow-y-auto pr-1">
                   {bdmv!.discs.map((d) => (
                     <div key={d.path}>
@@ -508,16 +536,32 @@ function LibrariesTab() {
                         {d.name}
                       </div>
                       <div className="space-y-1">
-                        {d.titles.map((t) => (
-                          <label key={t.id} className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 hover:bg-accent">
-                            <Checkbox checked={selected.has(t.id)} onCheckedChange={() => toggleTitle(t.id)} />
-                            <span className="flex-1 truncate">{t.label}</span>
-                            {t.segments > 1 && <Badge variant="muted">{t.segments} parts</Badge>}
-                            <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                              {Math.max(1, Math.round(t.durationSec / 60))}m
-                            </span>
-                          </label>
-                        ))}
+                        {d.titles.map((t) =>
+                          t.converted ? (
+                            <div key={t.id} className="flex items-center gap-2 rounded px-1 py-0.5 text-muted-foreground">
+                              <Check className="size-4 shrink-0 text-emerald-500" />
+                              <span className="flex-1 truncate">{t.label}</span>
+                              <Badge variant="muted">Converted</Badge>
+                              <button
+                                type="button"
+                                title="Delete converted file"
+                                onClick={() => void deleteTitle(t)}
+                                className="shrink-0 rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                              >
+                                <Trash2 className="size-4" />
+                              </button>
+                            </div>
+                          ) : (
+                            <label key={t.id} className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 hover:bg-accent">
+                              <Checkbox checked={selected.has(t.id)} onCheckedChange={() => toggleTitle(t.id)} />
+                              <span className="flex-1 truncate">{t.label}</span>
+                              {t.segments > 1 && <Badge variant="muted">{t.segments} parts</Badge>}
+                              <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                                {Math.max(1, Math.round(t.durationSec / 60))}m
+                              </span>
+                            </label>
+                          ),
+                        )}
                       </div>
                     </div>
                   ))}

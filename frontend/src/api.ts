@@ -267,6 +267,7 @@ export interface BdmvTitle {
   label: string;
   durationSec: number;
   segments: number;
+  converted: boolean;
 }
 
 export interface BdmvDisc {
@@ -278,7 +279,8 @@ export interface BdmvDisc {
 export interface BdmvDiscs {
   discs: BdmvDisc[];
   count: number;
-  titles: number;
+  pending: number;
+  converted: number;
 }
 
 export interface BdmvStatus {
@@ -288,7 +290,7 @@ export interface BdmvStatus {
   done: number;
   total: number;
   percent: number;
-  errors: { disc: string; error: string }[];
+  errors: { disc: string; title?: string; error: string }[];
   finished: number | null;
 }
 
@@ -300,6 +302,14 @@ export async function startBdmvConvert(titles?: string[]): Promise<void> {
     credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ titles: titles ?? null }),
+  });
+}
+export async function deleteBdmvTitles(titles: string[]): Promise<void> {
+  await fetch(`${BASE}/admin/bdmv/delete`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ titles }),
   });
 }
 

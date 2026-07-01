@@ -78,14 +78,13 @@ def test_fallback_to_size_heuristic_without_playlists(tmp_path, monkeypatch):
     assert [c.name for t in titles for c in t["clips"]] == ["00001.m2ts"]
 
 
-def test_find_discs_skips_already_converted(tmp_path, monkeypatch):
-    monkeypatch.setattr(bdmv, "_MIN_TITLE_BYTES", 1000)
+def test_find_discs_flags_converted_titles(tmp_path, monkeypatch):
     monkeypatch.setattr(bdmv, "_MIN_DURATION_SEC", 60)
     lib = tmp_path / "lib4"
     done = lib / "Done"
     _mk_disc(done, ["00001"])
     (done / "BDMV" / "PLAYLIST" / "00000.mpls").write_bytes(_make_mpls([("00001", 1400)]))
-    (done / "Done.mp4").write_bytes(b"x" * 2048)  # already has a video next to BDMV
+    (done / "Done.mp4").write_bytes(b"x" * 2048)  # output already exists
     todo = lib / "Todo"
     _mk_disc(todo, ["00001"])
     (todo / "BDMV" / "PLAYLIST" / "00000.mpls").write_bytes(_make_mpls([("00001", 1400)]))
@@ -93,8 +92,29 @@ def test_find_discs_skips_already_converted(tmp_path, monkeypatch):
         db.add(Library(path=str(lib), name="L4", group_depth=0))
         db.commit()
 
-    names = [d["name"] for d in bdmv.find_discs() if str(lib) in d["path"]]
-    assert "Todo" in names and "Done" not in names
+    discs = {d["name"]: d for d in bdmv.find_discs() if str(lib) in d["path"]}
+    assert discs["Done"]["titles"][0]["converted"] is True
+    assert discs["Todo"]["titles"][0]["converted"] is False
+
+
+def test_delete_outputs_only_removes_known_converted(tmp_path, monkeypatch):
+    monkeypatch.setattr(bdmv, "_MIN_DURATION_SEC", 60)
+    lib = tmp_path / "lib5"
+    disc = lib / "Movie"
+    _mk_disc(disc, ["00001"])
+    (disc / "BDMV" / "PLAYLIST" / "00000.mpls").write_bytes(_make_mpls([("00001", 1400)]))
+    out = disc / "Movie.mp4"
+    out.write_bytes(b"x" * 2048)
+    bogus = tmp_path / "elsewhere.mp4"
+    bogus.write_bytes(b"x" * 8)
+    with SessionLocal() as db:
+        db.add(Library(path=str(lib), name="L5", group_depth=0))
+        db.commit()
+
+    n = bdmv.delete_outputs([str(out), str(bogus)])
+    assert n == 1
+    assert not out.exists()   # the converted output was removed
+    assert bogus.exists()     # a path outside known outputs is refused
 
 
 @needs_ffmpeg
@@ -106,5 +126,5 @@ def test_convert_one_produces_playable_mp4(tmp_path):
         capture_output=True,
     )
     out = tmp_path / "out.mp4"
-    assert bdmv._convert_one([src], out, 1.0) is True
+    assert bdmv._convert_one([src], out, 1.0) is None  # None == success
     assert out.is_file() and out.stat().st_size > 0

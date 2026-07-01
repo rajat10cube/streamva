@@ -6,7 +6,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends
 from pydantic import BaseModel
 
 from ..auth import require_admin
-from ..bdmv import convert_all, convert_status, find_discs
+from ..bdmv import convert_all, convert_status, delete_outputs, find_discs
 from ..scanner.service import run_scan, scan_status
 
 router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)])
@@ -36,9 +36,15 @@ class BdmvConvertIn(BaseModel):
 
 @router.get("/bdmv")
 def bdmv_discs() -> dict:
-    """Blu-ray (BDMV) disc folders + their un-converted titles."""
+    """Blu-ray (BDMV) disc folders + their titles (converted ones flagged)."""
     discs = find_discs()
-    return {"discs": discs, "count": len(discs), "titles": sum(len(d["titles"]) for d in discs)}
+    titles = [t for d in discs for t in d["titles"]]
+    return {
+        "discs": discs,
+        "count": len(discs),
+        "pending": sum(1 for t in titles if not t["converted"]),
+        "converted": sum(1 for t in titles if t["converted"]),
+    }
 
 
 @router.post("/bdmv/convert")
@@ -46,6 +52,12 @@ def bdmv_convert(background: BackgroundTasks, body: BdmvConvertIn | None = None)
     targets = body.titles if body and body.titles else None
     background.add_task(convert_all, targets)
     return {"started": True}
+
+
+@router.post("/bdmv/delete")
+def bdmv_delete(body: BdmvConvertIn) -> dict:
+    """Delete already-converted MP4 outputs by title id."""
+    return {"deleted": delete_outputs(body.titles or [])}
 
 
 @router.get("/bdmv/status")
