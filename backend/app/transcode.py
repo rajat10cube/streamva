@@ -17,6 +17,7 @@ copy-only files never touch the GPU.
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 import subprocess
 from functools import lru_cache
@@ -71,6 +72,14 @@ def _stream_plan(src: Path) -> tuple[bool, bool]:
 
 # --- hardware (Intel Quick Sync) video encoding -----------------------------
 
+def _hw_env() -> dict[str, str]:
+    """ffmpeg environment for HW: force the Intel iHD VA driver (libva otherwise
+    guesses a non-existent 'xe' driver on Meteor Lake and fails to init)."""
+    env = dict(os.environ)
+    env.setdefault("LIBVA_DRIVER_NAME", "iHD")
+    return env
+
+
 def _hw_args(mode: str, dev: str) -> tuple[list[str], list[str], list[str]] | None:
     """(input_flags, video_filter, video_encoder) for HW encode, or None."""
     if mode == "vaapi":
@@ -95,7 +104,7 @@ def _hwaccel_functional(mode: str, dev: str) -> bool:
             "-f", "lavfi", "-i", "color=c=black:s=128x128:d=0.2:r=5",
             *vf, *venc, "-f", "null", "-"]
     try:
-        ok = subprocess.run(test, capture_output=True, timeout=30).returncode == 0
+        ok = subprocess.run(test, capture_output=True, timeout=30, env=_hw_env()).returncode == 0
     except (subprocess.SubprocessError, OSError):
         ok = False
     if not ok:
@@ -147,15 +156,18 @@ def _copy_to_file(src: Path, out: Path) -> bool:
 
 
 def _transcode_stream(src: Path, video_copy: bool, audio_copy: bool) -> StreamingResponse:
+    env = None
     if video_copy:
         in_flags, vf, venc = [], [], ["-c:v", "copy"]
     else:
         in_flags, vf, venc = _video_encode()
+        if in_flags:  # hardware encode -> force the iHD VA driver
+            env = _hw_env()
     aenc = ["-c:a", "copy"] if audio_copy else ["-c:a", "aac", "-b:a", "192k"]
     cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", *in_flags, "-i", str(src),
            "-map", "0:v:0", "-map", "0:a:0?", *vf, *venc, *aenc,
            "-movflags", "frag_keyframe+empty_moov+default_base_moof", "-f", "mp4", "pipe:1"]
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=env)
 
     def gen():
         try:
