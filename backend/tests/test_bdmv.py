@@ -1,5 +1,6 @@
-"""Blu-ray (BDMV) disc detection + conversion."""
+"""Blu-ray (BDMV) disc detection, playlist parsing, and conversion."""
 
+import struct
 import subprocess
 from pathlib import Path
 
@@ -15,42 +16,85 @@ init_db()
 needs_ffmpeg = pytest.mark.skipif(not ffmpeg_available(), reason="ffmpeg not installed")
 
 
-def _mk_bdmv(disc: Path, sizes: list[int]) -> None:
+def _make_mpls(items: list[tuple[str, float]]) -> bytes:
+    """Minimal valid .mpls: items = [(clip_id, duration_seconds)]."""
+    playitems = b""
+    for name, dur in items:
+        ticks = int(dur * 45000)
+        d = (name.encode("ascii").ljust(5, b"\0")[:5] + b"M2TS" + b"\x00\x00" + b"\x00"
+             + struct.pack(">I", 0) + struct.pack(">I", ticks))  # clip+codec+flags+stc+IN+OUT = 20B
+        playitems += struct.pack(">H", len(d)) + d
+    plsec = (struct.pack(">I", len(playitems) + 6) + b"\x00\x00"
+             + struct.pack(">H", len(items)) + struct.pack(">H", 0) + playitems)
+    header = b"MPLS0200" + struct.pack(">I", 40) + b"\x00" * 28  # 40-byte header, PlayList at 40
+    return header + plsec
+
+
+def _mk_disc(disc: Path, clips: list[str]) -> tuple[Path, Path]:
     stream = disc / "BDMV" / "STREAM"
+    pl = disc / "BDMV" / "PLAYLIST"
     stream.mkdir(parents=True, exist_ok=True)
-    (disc / "BDMV" / "PLAYLIST").mkdir(exist_ok=True)
-    for i, n in enumerate(sizes):
-        (stream / f"{i:05d}.m2ts").write_bytes(b"x" * n)
+    pl.mkdir(parents=True, exist_ok=True)
+    for c in clips:
+        (stream / f"{c}.m2ts").write_bytes(b"x" * 2048)
+    return stream, pl
 
 
-def test_find_discs_detects_bdmv_and_skips_small_titles(tmp_path, monkeypatch):
+def test_playlist_selects_main_title_and_joins_segments(tmp_path, monkeypatch):
+    monkeypatch.setattr(bdmv, "_MIN_DURATION_SEC", 600)
+    disc = tmp_path / "lib" / "Movie"
+    _, pl = _mk_disc(disc, ["00001", "00002", "00003"])
+    (pl / "00000.mpls").write_bytes(_make_mpls([("00001", 3000), ("00002", 2400)]))  # main, branched
+    (pl / "00001.mpls").write_bytes(_make_mpls([("00003", 120)]))                    # short extra
+
+    titles = bdmv._disc_titles(disc)
+    assert len(titles) == 1
+    assert [c.name for c in titles[0]["clips"]] == ["00001.m2ts", "00002.m2ts"]  # joined, in order
+    assert titles[0]["duration"] > 5000
+
+
+def test_playlist_drops_play_all_superset(tmp_path, monkeypatch):
+    monkeypatch.setattr(bdmv, "_MIN_DURATION_SEC", 60)
+    disc = tmp_path / "lib2" / "Series"
+    _, pl = _mk_disc(disc, ["00001", "00002"])
+    (pl / "00000.mpls").write_bytes(_make_mpls([("00001", 1400), ("00002", 1400)]))  # play-all
+    (pl / "00001.mpls").write_bytes(_make_mpls([("00001", 1400)]))                    # episode 1
+    (pl / "00002.mpls").write_bytes(_make_mpls([("00002", 1400)]))                    # episode 2
+
+    titles = bdmv._disc_titles(disc)
+    names = sorted(c.name for t in titles for c in t["clips"])
+    assert len(titles) == 2                        # play-all superset dropped
+    assert names == ["00001.m2ts", "00002.m2ts"]   # both episodes kept
+
+
+def test_fallback_to_size_heuristic_without_playlists(tmp_path, monkeypatch):
     monkeypatch.setattr(bdmv, "_MIN_TITLE_BYTES", 1000)
-    lib = tmp_path / "lib"
-    _mk_bdmv(lib / "MovieA", [4096, 100])          # one real title + a tiny menu
-    _mk_bdmv(lib / "sub" / "MovieB", [3000, 3000])  # nested disc, two episodes
-    (lib / "NotADisc").mkdir(parents=True)
-    with SessionLocal() as db:
-        db.add(Library(path=str(lib), name="L", group_depth=0))
-        db.commit()
-
-    discs = {d["name"]: d for d in bdmv.find_discs() if str(lib) in d["path"]}
-    assert discs["MovieA"]["titles"] == 1   # 100-byte menu skipped
-    assert discs["MovieB"]["titles"] == 2   # nested + both episodes
-    assert "NotADisc" not in discs
+    disc = tmp_path / "lib3" / "NoPlaylist"
+    stream = disc / "BDMV" / "STREAM"
+    stream.mkdir(parents=True)
+    (stream / "00001.m2ts").write_bytes(b"x" * 4096)   # real
+    (stream / "00002.m2ts").write_bytes(b"x" * 100)    # tiny (menu)
+    titles = bdmv._disc_titles(disc)
+    assert [c.name for t in titles for c in t["clips"]] == ["00001.m2ts"]
 
 
-def test_already_converted_disc_is_skipped(tmp_path, monkeypatch):
+def test_find_discs_skips_already_converted(tmp_path, monkeypatch):
     monkeypatch.setattr(bdmv, "_MIN_TITLE_BYTES", 1000)
-    lib = tmp_path / "lib2"
-    disc = lib / "MovieC"
-    _mk_bdmv(disc, [4096])
-    (disc / "MovieC.mp4").write_bytes(b"x" * 2048)  # a video already sits next to BDMV
+    monkeypatch.setattr(bdmv, "_MIN_DURATION_SEC", 60)
+    lib = tmp_path / "lib4"
+    done = lib / "Done"
+    _mk_disc(done, ["00001"])
+    (done / "BDMV" / "PLAYLIST" / "00000.mpls").write_bytes(_make_mpls([("00001", 1400)]))
+    (done / "Done.mp4").write_bytes(b"x" * 2048)  # already has a video next to BDMV
+    todo = lib / "Todo"
+    _mk_disc(todo, ["00001"])
+    (todo / "BDMV" / "PLAYLIST" / "00000.mpls").write_bytes(_make_mpls([("00001", 1400)]))
     with SessionLocal() as db:
-        db.add(Library(path=str(lib), name="L2", group_depth=0))
+        db.add(Library(path=str(lib), name="L4", group_depth=0))
         db.commit()
 
     names = [d["name"] for d in bdmv.find_discs() if str(lib) in d["path"]]
-    assert "MovieC" not in names
+    assert "Todo" in names and "Done" not in names
 
 
 @needs_ffmpeg
@@ -62,5 +106,5 @@ def test_convert_one_produces_playable_mp4(tmp_path):
         capture_output=True,
     )
     out = tmp_path / "out.mp4"
-    assert bdmv._convert_one(src, out) is True
+    assert bdmv._convert_one([src], out, 1.0) is True
     assert out.is_file() and out.stat().st_size > 0
