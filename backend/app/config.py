@@ -49,6 +49,8 @@ class Settings(BaseSettings):
     ffmpeg: str = "auto"                 # auto|on|off
     transcode: str = "on-demand"         # off|on-demand|pre-pass
     remux_cache_mb: int = 10240          # size cap for the .mkv->.mp4 remux cache (LRU)
+    hwaccel: str = "none"                # none|vaapi|qsv (Intel Quick Sync via /dev/dri)
+    hwaccel_device: str = "/dev/dri/renderD128"
 
     # --- auth ---
     auth: str = "basic"                  # none|basic (basic = require login)
