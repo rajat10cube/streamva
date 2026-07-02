@@ -56,6 +56,24 @@ export interface AudioTrack {
 export const getAudioTracks = (lectureId: number) =>
   getJSON<AudioTrack[]>(`/lectures/${lectureId}/audio-tracks`);
 
+export async function uploadSubtitle(lectureId: number, file: File): Promise<void> {
+  const body = new FormData();
+  body.append("file", file);
+  const res = await fetch(`${BASE}/lectures/${lectureId}/subtitle`, {
+    method: "POST",
+    credentials: "include",
+    body,
+  });
+  if (!res.ok) {
+    const msg = await res.json().catch(() => null);
+    throw new Error(msg?.detail || `Upload failed (${res.status})`);
+  }
+}
+
+export async function deleteSubtitle(lectureId: number): Promise<void> {
+  await fetch(`${BASE}/lectures/${lectureId}/subtitle`, { method: "DELETE", credentials: "include" });
+}
+
 export interface SectionItem {
   id: number;
   title: string;

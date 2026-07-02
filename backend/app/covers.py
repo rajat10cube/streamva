@@ -39,3 +39,12 @@ def previews_dir() -> Path:
 
 def preview_path(lib_path: str, course_rel: str, index: int) -> Path:
     return previews_dir() / f"{cover_token(lib_path, course_rel)}_{index}.jpg"
+
+
+def subtitles_dir() -> Path:
+    return get_settings().data_dir / "subtitles"
+
+
+def uploaded_subtitle_path(lib_path: str, lecture_rel: str) -> Path:
+    """User-uploaded subtitle (stored as VTT in the data dir, keyed by the video)."""
+    return subtitles_dir() / f"{cover_token(lib_path, lecture_rel)}.vtt"

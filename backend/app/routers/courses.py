@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from ..access import accessible_library_ids, can_access_course
 from ..auth import require_user
-from ..covers import PREVIEW_COUNT, cover_path, cover_token, preview_path
+from ..covers import PREVIEW_COUNT, cover_path, cover_token, preview_path, uploaded_subtitle_path
 from ..db import get_db
 from ..models import Attachment, Course, Lecture, Library, Progress, Section, User
 
@@ -149,18 +149,21 @@ def get_course(
 
     def lecture_json(lec: Lecture) -> dict:
         p = prog.get(lec.id)
+        has_sub = lec.subtitle_path is not None or (
+            lib is not None and uploaded_subtitle_path(lib.path, lec.path).is_file()
+        )
         return {
             "id": lec.id,
             "title": lec.title,
             "kind": lec.kind,
             "playback": _playback(lec),
             "needsTranscode": lec.needs_transcode,
-            "hasSubtitle": lec.subtitle_path is not None,
+            "hasSubtitle": has_sub,
             "durationSec": lec.duration_sec,
             "positionSec": p.position_sec if p else 0.0,
             "completed": bool(p.completed) if p else False,
             "stream": f"/api/lectures/{lec.id}/stream",
-            "subtitle": f"/api/lectures/{lec.id}/subtitle" if lec.subtitle_path else None,
+            "subtitle": f"/api/lectures/{lec.id}/subtitle" if has_sub else None,
         }
 
     return {

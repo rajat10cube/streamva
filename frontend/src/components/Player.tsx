@@ -1,10 +1,18 @@
 import mpegts from "mpegts.js";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 
+import { toast } from "sonner";
+
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { readPrefs, writePrefs } from "@/lib/prefs";
-import { getAudioTracks, type AudioTrack, type LectureItem } from "@/api";
+import {
+  deleteSubtitle,
+  getAudioTracks,
+  uploadSubtitle,
+  type AudioTrack,
+  type LectureItem,
+} from "@/api";
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 
@@ -55,6 +63,39 @@ const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
   const [audioTracks, setAudioTracks] = useState<AudioTrack[]>([]);
   const [audioIndex, setAudioIndex] = useState(0);
   const resumeAt = useRef<{ time: number; playing: boolean } | null>(null);
+  const [hasSub, setHasSub] = useState(!!lecture.subtitle);
+  const [subVersion, setSubVersion] = useState(0);
+  const subInput = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    setHasSub(!!lecture.subtitle);
+    setSubVersion(0);
+  }, [lecture.id, lecture.subtitle]);
+  const subtitleUrl = `/api/lectures/${lecture.id}/subtitle?v=${subVersion}`;
+
+  const showSubtitleTrack = () => {
+    const tt = ref.current?.textTracks?.[0];
+    if (tt) tt.mode = "showing";
+  };
+  const onUploadSub = async (f: File) => {
+    try {
+      await uploadSubtitle(lecture.id, f);
+      setHasSub(true);
+      setSubVersion((v) => v + 1);
+      toast.success("Subtitles added");
+      setTimeout(showSubtitleTrack, 300);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Upload failed");
+    }
+  };
+  const onRemoveSub = async () => {
+    try {
+      await deleteSubtitle(lecture.id);
+      setHasSub(false);
+      toast.success("Subtitles removed");
+    } catch {
+      toast.error("Could not remove subtitles");
+    }
+  };
 
   // fetch the file's audio tracks (reset when the lecture changes)
   useEffect(() => {
@@ -172,6 +213,7 @@ const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
     v.playbackRate = rate;
     v.volume = p.volume;
     v.muted = p.muted;
+    if (hasSub) showSubtitleTrack();
     // resuming after an audio-track switch: restore position + play state
     const resume = resumeAt.current;
     if (resume) {
@@ -255,8 +297,8 @@ const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
         onVolumeChange={onVolume}
         onError={() => setErr(true)}
       >
-        {lecture.subtitle && (
-          <track default kind="subtitles" src={lecture.subtitle} srcLang="en" label="English" />
+        {hasSub && (
+          <track default kind="subtitles" src={subtitleUrl} srcLang="en" label="Subtitles" />
         )}
       </video>
       <div className="flex items-center justify-between gap-2 text-sm text-muted-foreground">
@@ -269,6 +311,25 @@ const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
           </label>
         )}
         <div className="flex items-center gap-2">
+          <input
+            ref={subInput}
+            type="file"
+            accept=".srt,.vtt,.ass,.ssa,.sub"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void onUploadSub(f);
+              e.currentTarget.value = "";
+            }}
+          />
+          <button type="button" onClick={() => subInput.current?.click()} className="hover:text-foreground">
+            {hasSub ? "Replace subs" : "Add subs"}
+          </button>
+          {hasSub && (
+            <button type="button" onClick={() => void onRemoveSub()} className="hover:text-foreground">
+              Remove
+            </button>
+          )}
           {audioTracks.length > 1 && (
             <>
               <span>Audio</span>

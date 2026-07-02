@@ -67,6 +67,28 @@ def test_subtitle_404_when_lecture_has_none(tmp_path):
     assert client.get(f"/api/lectures/{l1}/subtitle", auth=AUTH).status_code == 404
 
 
+def test_upload_subtitle_then_served_as_vtt(tmp_path):
+    l1, _ = _seed(tmp_path)  # no sidecar
+    r = client.post(
+        f"/api/lectures/{l1}/subtitle", auth=AUTH, files={"file": ("s.srt", SRT, "text/plain")}
+    )
+    assert r.status_code == 200
+    got = client.get(f"/api/lectures/{l1}/subtitle", auth=AUTH)
+    assert got.status_code == 200 and got.text.startswith("WEBVTT")
+    assert "00:00:01.000 --> 00:00:04.000" in got.text
+
+
+def test_uploaded_subtitle_overrides_sidecar_then_delete_restores_it(tmp_path):
+    l1, _ = _seed(tmp_path, with_srt=True)  # has a sidecar
+    up = "1\n00:00:09,000 --> 00:00:10,000\nUploaded\n"
+    assert client.post(
+        f"/api/lectures/{l1}/subtitle", auth=AUTH, files={"file": ("s.srt", up, "text/plain")}
+    ).status_code == 200
+    assert "Uploaded" in client.get(f"/api/lectures/{l1}/subtitle", auth=AUTH).text  # upload wins
+    assert client.delete(f"/api/lectures/{l1}/subtitle", auth=AUTH).status_code == 200
+    assert "Hello, world" in client.get(f"/api/lectures/{l1}/subtitle", auth=AUTH).text  # sidecar back
+
+
 def test_next_lecture_walks_then_ends(tmp_path):
     l1, l2 = _seed(tmp_path)
     assert client.get(f"/api/lectures/{l1}/next", auth=AUTH).json()["next"]["id"] == l2
