@@ -32,6 +32,11 @@ export interface LibraryResponse {
 
 export type Playback = "native" | "mpegts" | "remux" | "document";
 
+export interface SubtitleTrack {
+  label: string;
+  url: string;
+}
+
 export interface LectureItem {
   id: number;
   title: string;
@@ -44,6 +49,7 @@ export interface LectureItem {
   completed: boolean;
   stream: string;
   subtitle: string | null;
+  subtitles: SubtitleTrack[];
 }
 
 export interface AudioTrack {

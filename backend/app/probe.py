@@ -97,6 +97,58 @@ def audio_tracks(path: Path) -> list[dict]:
     return tracks
 
 
+# Image-based subtitle codecs need OCR to become text — we can't extract these to
+# WebVTT, so they're skipped (they still occupy a subtitle-stream index).
+IMAGE_SUB_CODECS = {"hdmv_pgs_subtitle", "pgssub", "dvd_subtitle", "dvbsub", "dvb_subtitle", "xsub"}
+
+
+def subtitle_tracks(path: Path) -> list[dict]:
+    """List embedded subtitle streams as [{idx (subtitle-relative), codec, language, title}].
+
+    ``idx`` is the position among subtitle streams, i.e. the ``N`` in ffmpeg's
+    ``-map 0:s:N`` (image-based tracks are included so indices stay correct).
+    """
+    try:
+        out = subprocess.run(
+            [ffprobe_bin(), "-v", "error", "-select_streams", "s",
+             "-show_entries", "stream=codec_name:stream_tags=language,title", "-of", "json", str(path)],
+            capture_output=True, text=True, timeout=30,
+        )
+        data = json.loads(out.stdout or "{}")
+    except (subprocess.SubprocessError, OSError, ValueError):
+        return []
+    tracks = []
+    for i, s in enumerate(data.get("streams") or []):
+        tags = s.get("tags") or {}
+        tracks.append({
+            "idx": i,
+            "codec": s.get("codec_name"),
+            "language": tags.get("language"),
+            "title": tags.get("title"),
+        })
+    return tracks
+
+
+def extract_subtitle(video: Path, out: Path, idx: int) -> bool:
+    """Extract text-based subtitle stream ``idx`` (subtitle-relative) to WebVTT."""
+    out.parent.mkdir(parents=True, exist_ok=True)
+    tmp = out.with_suffix(".tmp.vtt")
+    try:
+        r = subprocess.run(
+            [ffmpeg_bin(), "-hide_banner", "-loglevel", "error", "-y",
+             "-i", str(video), "-map", f"0:s:{idx}", "-f", "webvtt", str(tmp)],
+            capture_output=True, timeout=180,
+        )
+    except (subprocess.SubprocessError, OSError):
+        tmp.unlink(missing_ok=True)
+        return False
+    if r.returncode == 0 and tmp.exists() and tmp.stat().st_size > 0:
+        tmp.replace(out)
+        return True
+    tmp.unlink(missing_ok=True)
+    return False
+
+
 def probe_duration(path: Path) -> float | None:
     try:
         out = subprocess.run(

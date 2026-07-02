@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from ..access import can_access_course
 from ..auth import require_user
-from ..covers import uploaded_subtitle_path
+from ..covers import embedded_tracks, embedded_vtt_path, uploaded_subtitle_path
 from ..db import get_db
 from ..models import Course, Lecture, Library, User
 from ..paths import library_root, safe_media_path
@@ -44,6 +44,27 @@ def _resolve(db: Session, lecture_id: int, user: User) -> tuple[Lecture, "Course
 
 def srt_to_vtt(text: str) -> str:
     return "WEBVTT\n\n" + _TS_RE.sub(r"\1.\2", text)
+
+
+def _subtitle_label(language: str | None, title: str | None, i: int) -> str:
+    if title:
+        return title
+    if language and language.lower() != "und":
+        return language.upper()
+    return f"Subtitles {i + 1}"
+
+
+def embedded_subtitle_list(lecture_id: int, lib_path: str | None, lecture_rel: str) -> list[dict]:
+    """Selectable embedded subtitle tracks (extracted at scan time) for a lecture."""
+    if lib_path is None:
+        return []
+    return [
+        {
+            "label": _subtitle_label(t.get("language"), t.get("title"), i),
+            "url": f"/api/lectures/{lecture_id}/subtitle?track={t['idx']}",
+        }
+        for i, t in enumerate(embedded_tracks(lib_path, lecture_rel))
+    ]
 
 
 def _ffmpeg_to_vtt(raw: bytes, ext: str) -> str | None:
@@ -93,6 +114,7 @@ def get_lecture(
         "kind": lec.kind,
         "needsTranscode": lec.needs_transcode,
         "hasSubtitle": has_sub,
+        "subtitles": embedded_subtitle_list(lec.id, lib.path if lib else None, lec.path),
         "durationSec": lec.duration_sec,
         "courseSlug": course.slug,
         "stream": f"/api/lectures/{lec.id}/stream",
@@ -146,9 +168,19 @@ def remux(lecture_id: int, user: User = Depends(require_user), db: Session = Dep
 
 
 @router.get("/{lecture_id}/subtitle")
-def subtitle(lecture_id: int, user: User = Depends(require_user), db: Session = Depends(get_db)):
+def subtitle(
+    lecture_id: int,
+    track: int | None = None,
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
     lec, course, root = _resolve(db, lecture_id, user)
     lib = db.get(Library, course.library_id) if course.library_id else None
+    if track is not None:  # an embedded track extracted at scan time
+        vtt = embedded_vtt_path(lib.path, lec.path, track) if lib is not None else None
+        if vtt is not None and vtt.is_file():
+            return Response(vtt.read_text(encoding="utf-8", errors="ignore"), media_type="text/vtt")
+        raise HTTPException(404, "No subtitle")
     if lib is not None:  # a user-uploaded subtitle wins over any sidecar
         up = uploaded_subtitle_path(lib.path, lec.path)
         if up.is_file():

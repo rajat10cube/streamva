@@ -14,6 +14,7 @@ from ..auth import require_user
 from ..covers import PREVIEW_COUNT, cover_path, cover_token, preview_path, uploaded_subtitle_path
 from ..db import get_db
 from ..models import Attachment, Course, Lecture, Library, Progress, Section, User
+from .lectures import embedded_subtitle_list
 
 router = APIRouter(prefix="/courses", tags=["courses"])
 
@@ -164,6 +165,7 @@ def get_course(
             "completed": bool(p.completed) if p else False,
             "stream": f"/api/lectures/{lec.id}/stream",
             "subtitle": f"/api/lectures/{lec.id}/subtitle" if has_sub else None,
+            "subtitles": embedded_subtitle_list(lec.id, lib.path if lib else None, lec.path),
         }
 
     return {

@@ -10,6 +10,7 @@ different folder always yields a different filename.
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 
 from .config import get_settings
@@ -48,3 +49,29 @@ def subtitles_dir() -> Path:
 def uploaded_subtitle_path(lib_path: str, lecture_rel: str) -> Path:
     """User-uploaded subtitle (stored as VTT in the data dir, keyed by the video)."""
     return subtitles_dir() / f"{cover_token(lib_path, lecture_rel)}.vtt"
+
+
+# --- embedded subtitle tracks (extracted from the container at scan time) ----
+
+def embedded_subs_dir() -> Path:
+    return get_settings().data_dir / "embedded_subs"
+
+
+def embedded_manifest_path(lib_path: str, lecture_rel: str) -> Path:
+    """Per-video record of which embedded subtitle tracks were extracted."""
+    return embedded_subs_dir() / f"{cover_token(lib_path, lecture_rel)}.json"
+
+
+def embedded_vtt_path(lib_path: str, lecture_rel: str, idx: int) -> Path:
+    """A single embedded subtitle stream (subtitle-relative ``idx``) as WebVTT."""
+    return embedded_subs_dir() / f"{cover_token(lib_path, lecture_rel)}.s{idx}.vtt"
+
+
+def embedded_tracks(lib_path: str, lecture_rel: str) -> list[dict]:
+    """Read the scan-time manifest of extracted embedded tracks (empty if none)."""
+    try:
+        data = json.loads(embedded_manifest_path(lib_path, lecture_rel).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    tracks = data.get("tracks")
+    return tracks if isinstance(tracks, list) else []

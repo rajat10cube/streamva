@@ -7,6 +7,7 @@ whole run, and live progress + per-library errors are exposed via scan_status().
 
 from __future__ import annotations
 
+import json
 import threading
 import time
 from pathlib import Path
@@ -83,6 +84,7 @@ def _scan_library(db, settings, lib: Library) -> None:
     _probe_durations(db, settings, lib)
     _generate_covers(db, settings, lib)
     _generate_previews(db, settings, lib)
+    _extract_subtitles(db, settings, lib)
 
     if found == 0:
         _status["errors"].append(
@@ -184,6 +186,66 @@ def _generate_previews(db, settings, lib: Library) -> None:
     _status["phase"] = "scanning"
 
 
+def _extract_subtitles(db, settings, lib: Library) -> None:
+    """Extract embedded text subtitle tracks to WebVTT (new videos only).
+
+    Each processed video gets a manifest listing the tracks that were extracted;
+    its presence means "already handled" so rescans skip it (a video with no
+    embedded subs gets an empty manifest and isn't re-probed).
+    """
+    if settings.ffmpeg == "off":
+        return
+    from ..probe import IMAGE_SUB_CODECS, extract_subtitle, ffmpeg_available, subtitle_tracks
+
+    if not ffmpeg_available():
+        return
+    from ..covers import embedded_manifest_path, embedded_vtt_path
+
+    root = Path(lib.path)
+    lectures = db.scalars(
+        select(Lecture)
+        .join(Course, Course.id == Lecture.course_id)
+        .where(Course.library_id == lib.id, Course.missing.is_(False), Lecture.kind == "video")
+    ).all()
+    for lec in lectures:
+        manifest = embedded_manifest_path(lib.path, lec.path)
+        if manifest.exists():  # already processed this video
+            continue
+        _status["phase"] = "subtitles"
+        src = root / lec.path
+        extracted: list[dict] = []
+        for t in subtitle_tracks(src):
+            if (t.get("codec") or "") in IMAGE_SUB_CODECS:
+                continue  # PGS/VobSub are image-based — need OCR, skip
+            if extract_subtitle(src, embedded_vtt_path(lib.path, lec.path, t["idx"]), t["idx"]):
+                extracted.append(
+                    {"idx": t["idx"], "language": t.get("language"), "title": t.get("title")}
+                )
+        manifest.parent.mkdir(parents=True, exist_ok=True)
+        manifest.write_text(json.dumps({"tracks": extracted}), encoding="utf-8")
+    _status["phase"] = "scanning"
+
+
+def _cleanup_embedded_subs(db) -> None:
+    """Drop extracted subtitle files/manifests that no longer belong to a lecture."""
+    from ..covers import cover_token, embedded_subs_dir
+
+    rows = db.execute(
+        select(Library.path, Lecture.path)
+        .join(Course, Course.library_id == Library.id)
+        .join(Lecture, Lecture.course_id == Course.id)
+    ).all()
+    keep = {cover_token(lib_path, lec_path) for lib_path, lec_path in rows}
+    edir = embedded_subs_dir()
+    if edir.is_dir():
+        for f in edir.glob("*"):  # files are "{token}.json" and "{token}.s{idx}.vtt"
+            if f.name.split(".", 1)[0] not in keep:
+                try:
+                    f.unlink()
+                except OSError:
+                    pass
+
+
 def _cleanup_covers(db) -> None:
     """Drop generated covers/previews that no longer belong to any course.
 
@@ -241,6 +303,7 @@ def run_scan() -> dict:
                     _status["librariesDone"] = i + 1
 
             _cleanup_covers(db)
+            _cleanup_embedded_subs(db)
 
             _status["phase"] = "indexing"
             _status["current"] = None

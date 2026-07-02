@@ -65,24 +65,32 @@ const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
   const resumeAt = useRef<{ time: number; playing: boolean } | null>(null);
   const [hasSub, setHasSub] = useState(!!lecture.subtitle);
   const [subVersion, setSubVersion] = useState(0);
+  // which subtitle track is showing: -1 = off, else an index into subtitleTracks
+  const [subChoice, setSubChoice] = useState(-1);
   const subInput = useRef<HTMLInputElement>(null);
   useEffect(() => {
     setHasSub(!!lecture.subtitle);
     setSubVersion(0);
-  }, [lecture.id, lecture.subtitle]);
+    const hasAny = !!lecture.subtitle || (lecture.subtitles?.length ?? 0) > 0;
+    setSubChoice(hasAny ? 0 : -1);
+  }, [lecture.id, lecture.subtitle, lecture.subtitles]);
   const subtitleUrl = `/api/lectures/${lecture.id}/subtitle?v=${subVersion}`;
 
-  const showSubtitleTrack = () => {
-    const tt = ref.current?.textTracks?.[0];
-    if (tt) tt.mode = "showing";
+  // apply the chosen track to the video's TextTracks (order matches render below)
+  const applyTrackModes = (choice: number) => {
+    const v = ref.current;
+    if (!v) return;
+    for (let i = 0; i < v.textTracks.length; i++) {
+      v.textTracks[i].mode = i === choice ? "showing" : "disabled";
+    }
   };
   const onUploadSub = async (f: File) => {
     try {
       await uploadSubtitle(lecture.id, f);
       setHasSub(true);
       setSubVersion((v) => v + 1);
+      setSubChoice(0); // the custom track renders first
       toast.success("Subtitles added");
-      setTimeout(showSubtitleTrack, 300);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Upload failed");
     }
@@ -91,11 +99,18 @@ const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
     try {
       await deleteSubtitle(lecture.id);
       setHasSub(false);
+      setSubChoice((lecture.subtitles?.length ?? 0) > 0 ? 0 : -1);
       toast.success("Subtitles removed");
     } catch {
       toast.error("Could not remove subtitles");
     }
   };
+
+  // re-apply track visibility whenever the choice or the available tracks change
+  useEffect(() => {
+    applyTrackModes(subChoice);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subChoice, hasSub, subVersion, lecture.id, lecture.subtitles]);
 
   // fetch the file's audio tracks (reset when the lecture changes)
   useEffect(() => {
@@ -213,7 +228,7 @@ const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
     v.playbackRate = rate;
     v.volume = p.volume;
     v.muted = p.muted;
-    if (hasSub) showSubtitleTrack();
+    applyTrackModes(subChoice);
     // resuming after an audio-track switch: restore position + play state
     const resume = resumeAt.current;
     if (resume) {
@@ -282,6 +297,11 @@ const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
     );
   }
 
+  // custom/sidecar subtitle (managed via upload controls) + embedded tracks
+  const subtitleTracks: { label: string; url: string }[] = [];
+  if (hasSub) subtitleTracks.push({ label: "Subtitles", url: subtitleUrl });
+  for (const s of lecture.subtitles ?? []) subtitleTracks.push(s);
+
   return (
     <div className="space-y-2">
       <video
@@ -297,9 +317,9 @@ const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
         onVolumeChange={onVolume}
         onError={() => setErr(true)}
       >
-        {hasSub && (
-          <track default kind="subtitles" src={subtitleUrl} srcLang="en" label="Subtitles" />
-        )}
+        {subtitleTracks.map((t) => (
+          <track key={t.url} kind="subtitles" src={t.url} label={t.label} />
+        ))}
       </video>
       <div className="flex items-center justify-between gap-2 text-sm text-muted-foreground">
         {hideAutoplayNext ? (
@@ -329,6 +349,21 @@ const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
             <button type="button" onClick={() => void onRemoveSub()} className="hover:text-foreground">
               Remove
             </button>
+          )}
+          {subtitleTracks.length > 0 && (
+            <>
+              <span>Subtitles</span>
+              <select
+                value={subChoice}
+                onChange={(e) => setSubChoice(Number(e.target.value))}
+                className="h-8 max-w-[9rem] rounded-md border border-input bg-background px-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <option value={-1}>Off</option>
+                {subtitleTracks.map((t, i) => (
+                  <option key={t.url} value={i}>{t.label}</option>
+                ))}
+              </select>
+            </>
           )}
           {audioTracks.length > 1 && (
             <>
